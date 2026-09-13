@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://api.apple-cloudkit.com",
+  "apiVersion": "1",
+  "operations": [
+    {
+      "id": "probeCurrentUser",
+      "method": "GET",
+      "path": "{scope}/users/caller",
+      "effect": "read",
+      "credentials": ["apiTokenWebUser"],
+      "documentedScopes": ["public", "private", "shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "listZones",
+      "method": "POST",
+      "path": "{scope}/zones/list",
+      "effect": "read",
+      "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
+      "documentedScopes": ["public", "private"],
+      "unverifiedScopes": ["shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "lookupZones",
+      "method": "POST",
+      "path": "{scope}/zones/lookup",
+      "effect": "read",
+      "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
+      "documentedScopes": ["public", "private"],
+      "unverifiedScopes": ["shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "lookupRecords",
+      "method": "POST",
+      "path": "{scope}/records/lookup",
+      "effect": "read",
+      "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
+      "documentedScopes": ["public", "private", "shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "queryRecords",
+      "method": "POST",
+      "path": "{scope}/records/query",
+      "effect": "read",
+      "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
+      "documentedScopes": ["public", "private", "shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "listSubscriptions",
+      "method": "POST",
+      "path": "{scope}/subscriptions/list",
+      "effect": "read",
+      "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
+      "documentedScopes": ["public", "private"],
+      "unverifiedScopes": ["shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "getDatabaseChanges",
+      "method": "POST",
+      "path": "{scope}/changes/database",
+      "effect": "read",
+      "credentials": ["apiTokenWebUser"],
+      "documentedScopes": ["private", "shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    },
+    {
+      "id": "getZoneChanges",
+      "method": "POST",
+      "path": "{scope}/changes/zone",
+      "effect": "read",
+      "credentials": ["apiTokenWebUser"],
+      "documentedScopes": ["private", "shared"],
+      "implementationStatus": "pending",
+      "liveVerificationStatus": "notVerified"
+    }
+  ],
+  "invariants": {
+    "allowedEffects": ["read"],
+    "redirects": "reject",
+    "singleRequestTimeoutMilliseconds": 15000,
+    "toolTimeoutMilliseconds": 45000,
+    "maximumDecodedResponseBytes": 4194304,
+    "maximumSerializedResultBytes": 524288,
+    "maximumGlobalConcurrency": 4,
+    "maximumCredentialConcurrency": 1
+  }
+}

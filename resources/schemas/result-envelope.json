@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cloudkit://schemas/result-envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "execution", "remoteDataEffect", "sessionEffect", "completeness", "context", "observedAt", "limitations", "data"],
+  "properties": {
+    "status": { "enum": ["ok", "partial", "unavailable", "error"] },
+    "execution": { "enum": ["notStarted", "started", "completed", "uncertain"] },
+    "remoteDataEffect": { "const": "none" },
+    "sessionEffect": { "enum": ["unchanged", "rotated", "uncertain"] },
+    "completeness": { "enum": ["completeForRequest", "partial", "notEstablished"] },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "containerId", "environment", "scope", "backend"],
+      "properties": {
+        "profileId": { "type": "string" },
+        "containerId": { "type": "string" },
+        "environment": { "enum": ["development", "production"] },
+        "scope": { "enum": ["public", "private", "shared"] },
+        "backend": { "const": "web-services" }
+      }
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "data": {}
+  }
+}
