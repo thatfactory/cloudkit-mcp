@@ -31,10 +31,11 @@ export function projectRecord(
   handleContext: HandleContext,
   requestedFields: readonly string[] = [],
 ): RecordObservation {
+  const code = boundedString(wire.serverErrorCode, 128);
+  if (code) return { handle: registry.issue("record", handleContext, { zone, outcome: code }), outcome: classifyOutcome(code), deleted: "unknown" };
   const recordName = boundedString(wire.recordName, 1024);
   if (!recordName) {
-    const code = boundedString(wire.serverErrorCode, 128);
-    return { handle: registry.issue("record", handleContext, { zone, outcome: code ?? "unknown" }), outcome: classifyOutcome(code), deleted: "unknown" };
+    return { handle: registry.issue("record", handleContext, { zone, outcome: "unknown" }), outcome: "unknown", deleted: "unknown" };
   }
   const handle = registry.issue("record", handleContext, { zone, recordName });
   const recordType = boundedString(wire.recordType, 255);

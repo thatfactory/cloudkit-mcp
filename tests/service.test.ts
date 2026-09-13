@@ -27,8 +27,10 @@ test("synthetic contracts exercise the complete read-only diagnostic service", a
     if (url.pathname.endsWith("/changes/database")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], syncToken: "database-token", ...token });
     if (url.pathname.endsWith("/changes/zone")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" }, records: [{ ...wireRecord("record-a"), deleted: false }], syncToken: "zone-token" }], ...token });
     if (url.pathname.endsWith("/records/lookup")) {
+      assert.deepEqual(request.zoneID, { zoneName: "Inventory", ownerRecordName: "owner-principal" });
+      assert.equal(request.numbersAsStrings, true);
       const names = (request.records as Array<{ recordName: string }> | undefined)?.map((record) => record.recordName) ?? [];
-      if (names[0] === "share-record") return response({ records: [{ recordName: "share-record", recordType: "cloudkit.share", participants: [{ role: "owner", acceptanceStatus: "accepted", permission: "readWrite", userIdentity: { lookupInfo: { emailAddress: "must-not-escape@example.com" } } }], shareType: "zoneWide", currentUserParticipantRole: "owner", publicPermission: "none" }], ...token });
+      if (names[0] === "share-record") return response({ records: [{ recordName: "share-record", recordType: "cloudkit.share", participants: [{ type: "OWNER", acceptanceStatus: "ACCEPTED", permission: "READ_WRITE", userIdentity: { lookupInfo: { emailAddress: "must-not-escape@example.com" } } }], shareType: "ZONE_WIDE", currentUserParticipant: { type: "OWNER" }, publicPermission: "NONE" }], ...token });
       return response({ records: names.map((name) => ({ ...wireRecord(name), share: { recordName: "share-record" } })), ...token });
     }
     return response({ serverErrorCode: "UNKNOWN" }, 500);

@@ -60,7 +60,12 @@ export class SessionManager {
     const principalEpoch = credential.class === "web-user" ? credential.principalEpoch : `credential-generation-${credential.generation}`;
     const principalInput = credential.class === "web-user" && credential.principalRecordName ? credential.principalRecordName : `${profile.credentialRef}:${principalEpoch}`;
     const principalAlias = createHmac("sha256", this.#aliasSecret).update(`${profile.containerId}\0${principalInput}`).digest("base64url").slice(0, 20);
-    return { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope, backend: profile.backend, principalAlias: `account_${principalAlias}`, principalEpoch };
+    return { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope, backend: profile.backend, principalAlias: `account_${principalAlias}`, principalEpoch, principalBound: credential.class !== "web-user" || credential.principalRecordName !== undefined };
+  }
+
+  /** Produces a process-local keyed alias for a provider identity. */
+  alias(kind: "account" | "owner", containerId: string, identity: string): string {
+    return `${kind}_${createHmac("sha256", this.#aliasSecret).update(`${containerId}\0${identity}`).digest("base64url").slice(0, 20)}`;
   }
 }
 

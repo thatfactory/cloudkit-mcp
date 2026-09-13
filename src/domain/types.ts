@@ -40,6 +40,7 @@ export interface ResolvedView {
   readonly backend: BackendKind;
   readonly principalAlias: string;
   readonly principalEpoch: string;
+  readonly principalBound: boolean;
 }
 
 /** Owner-aware zone identity. */

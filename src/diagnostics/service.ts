@@ -56,7 +56,7 @@ export class DiagnosticService {
       return {
         accessible: principal !== undefined,
         principalObserved: principal !== undefined,
-        principalAlias: principal ? `account_${selectorDigest([profile.containerId, principal]).slice(0, 20)}` : undefined,
+        principalAlias: principal ? this.sessions.alias("account", profile.containerId, principal) : undefined,
         capability: { documented: true, implemented: true, liveVerified: false, currentlyAuthorized: principal !== undefined },
       };
     });
@@ -69,7 +69,7 @@ export class DiagnosticService {
       return zones.map((item) => {
         const zone = parseZone(item);
         const handle = this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: zone.ownerRecordName, zoneName: zone.zoneName }, zone);
-        return { handle, ...(profile.recordPolicy.discloseZoneNames ? { zoneName: zone.zoneName } : {}), ownerAlias: `owner_${selectorDigest([profile.containerId, zone.ownerRecordName]).slice(0, 20)}` };
+        return { handle, ...(profile.recordPolicy.discloseZoneNames ? { zoneName: zone.zoneName } : {}), ownerAlias: this.sessions.alias("owner", profile.containerId, zone.ownerRecordName) };
       });
     });
   }
@@ -81,8 +81,10 @@ export class DiagnosticService {
     return this.#remote("lookupZones", view, { zones: [{ zoneID: zone }] }, (body, profile, context) => {
       const item = boundedArray(asObject(body).zones, 1)[0];
       if (!item) return { outcome: "notFoundInView" };
+      const itemError = boundedString(asObject(item).serverErrorCode, 128);
+      if (itemError) return { outcome: classifyProviderOutcome(itemError) };
       const observed = parseZone(item);
-      return { outcome: "present", handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: observed.ownerRecordName, zoneName: observed.zoneName }, observed), ...(profile.recordPolicy.discloseZoneNames ? { zoneName: observed.zoneName } : {}), ownerAlias: `owner_${selectorDigest([profile.containerId, observed.ownerRecordName]).slice(0, 20)}` };
+      return { outcome: "present", handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: observed.ownerRecordName, zoneName: observed.zoneName }, observed), ...(profile.recordPolicy.discloseZoneNames ? { zoneName: observed.zoneName } : {}), ownerAlias: this.sessions.alias("owner", profile.containerId, observed.ownerRecordName) };
     });
   }
 
@@ -108,7 +110,7 @@ export class DiagnosticService {
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "queryRecords", digest, zone);
     const marker = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
     const query = { recordType, filterBy: filters.map((filter) => ({ fieldName: filter.fieldName, comparator: filter.comparator, fieldValue: { value: filter.fieldValue } })) };
-    return this.#remote("queryRecords", view, { zoneID: zone, query, resultsLimit: normalizedLimit, desiredKeys: [], ...(marker ? { continuationMarker: marker } : {}) }, (body, selectedProfile) => {
+    return this.#remote("queryRecords", view, { zoneID: zone, query, resultsLimit: normalizedLimit, desiredKeys: [], numbersAsStrings: true, ...(marker ? { continuationMarker: marker } : {}) }, (body, selectedProfile) => {
       const object = asObject(body);
       const records = boundedArray(object.records, normalizedLimit).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest }));
       const nextMarker = boundedString(object.continuationMarker, 8192);
@@ -121,26 +123,27 @@ export class DiagnosticService {
   async getShare(view: ViewInput, zoneInput: ZoneInput, recordName: string) {
     const profile = this.#profile(view);
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
-    const referenceResult = await this.sessions.execute(profile, view.scope, "lookupRecords", { records: [{ recordName, zoneID: zone }], desiredKeys: [] });
+    const referenceResult = await this.sessions.execute(profile, view.scope, "lookupRecords", { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true });
     const record = asObject(boundedArray(asObject(referenceResult.body).records, 1)[0]);
     const shareReference = asObject(record.share);
     const shareRecordName = boundedString(shareReference.recordName, 1024);
     if (!shareRecordName) {
       return { status: "unavailable", execution: "completed", remoteDataEffect: "none" as const, sessionEffect: referenceResult.replacementWebAuthenticationToken ? "rotated" as const : "unchanged" as const, completeness: "notEstablished" as const, context: { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: view.scope, backend: profile.backend }, observedAt: this.now().toISOString(), limitations: ["The selected record did not expose a proven share-record reference in this view."], data: { outcome: "unavailable" } };
     }
-    return this.#remote("lookupRecords", view, { records: [{ recordName: shareRecordName, zoneID: zone }], desiredKeys: [] }, (body) => {
+    return this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName: shareRecordName }], desiredKeys: [], numbersAsStrings: true }, (body) => {
       const share = asObject(boundedArray(asObject(body).records, 1)[0]);
       const fields = asObject(share.fields);
+      const currentParticipant = asObject(fieldValue(fields.currentUserParticipant) ?? share.currentUserParticipant);
       const participantsValue = fieldValue(fields.participants) ?? share.participants;
       const participants = boundedArray(participantsValue, 100);
       return {
         outcome: Object.keys(share).length ? "present" : "unavailable",
-        mode: normalizeEnum(fieldValue(fields.shareType) ?? share.shareType, ["zoneWide", "recordHierarchy"]),
-        callerRole: normalizeEnum(fieldValue(fields.currentUserParticipantRole) ?? share.currentUserParticipantRole, ["owner", "privateUser", "publicUser"]),
-        publicPermission: normalizeEnum(fieldValue(fields.publicPermission) ?? share.publicPermission, ["none", "readOnly", "readWrite"]),
+        mode: normalizeShareEnum(fieldValue(fields.shareType) ?? share.shareType),
+        callerRole: normalizeShareEnum(currentParticipant.type ?? fieldValue(fields.currentUserParticipantRole) ?? share.currentUserParticipantRole),
+        publicPermission: normalizeShareEnum(fieldValue(fields.publicPermission) ?? share.publicPermission),
         participants: participants.map((item) => {
           const participant = asObject(item);
-          return { role: normalizeEnum(participant.role, ["owner", "privateUser", "publicUser"]), acceptanceStatus: normalizeEnum(participant.acceptanceStatus, ["pending", "accepted", "removed"]), permission: normalizeEnum(participant.permission, ["none", "readOnly", "readWrite"]) };
+          return { role: normalizeShareEnum(participant.type ?? participant.role), acceptanceStatus: normalizeShareEnum(participant.acceptanceStatus), permission: normalizeShareEnum(participant.permission) };
         }),
         limitations: ["Participant identities and share URLs are intentionally omitted."],
       };
@@ -163,9 +166,12 @@ export class DiagnosticService {
     const token = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
     return this.#remote("getDatabaseChanges", view, token ? { syncToken: token } : {}, (body) => {
       const object = asObject(body);
-      const next = boundedString(object.syncToken, 8192);
-      if (token !== undefined && next === token) throw malformedContinuation();
-      return { changedZones: boundedArray(object.zones, 100).map((item) => { const changedZone = parseZone(item); return { handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: changedZone.ownerRecordName, zoneName: changedZone.zoneName }, changedZone), deleted: asObject(item).deleted === true }; }), coverage: token ? "sinceIssuedCursor" : start, continuationHandle: next ? this.handles.issue("databaseCursor", context, next) : undefined };
+      const next = boundedString(object.syncToken, 8192); const moreComing = object.moreComing === true;
+      if (moreComing && (!next || next === token)) throw malformedContinuation();
+      const entries = boundedArray(object.zones, 100);
+      const errors = entries.filter((item) => boundedString(asObject(item).serverErrorCode, 128)).map((item) => ({ outcome: classifyProviderOutcome(boundedString(asObject(item).serverErrorCode, 128)) }));
+      const changedZones = entries.filter((item) => !boundedString(asObject(item).serverErrorCode, 128)).map((item) => { const changedZone = parseZone(item); return { handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: changedZone.ownerRecordName, zoneName: changedZone.zoneName }, changedZone), deleted: asObject(item).deleted === true }; });
+      return { changedZones, errors, coverage: token ? "sinceIssuedCursor" : start, continuationHandle: moreComing && next ? this.handles.issue("databaseCursor", context, next) : undefined };
     });
   }
 
@@ -181,9 +187,12 @@ export class DiagnosticService {
     const token = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
     return this.#remote("getZoneChanges", view, { zones: [{ zoneID: zone, ...(token ? { syncToken: token } : {}), desiredKeys: [] }] }, (body, selectedProfile) => {
       const zoneResult = asObject(boundedArray(asObject(body).zones, 1)[0]);
+      const zoneError = boundedString(zoneResult.serverErrorCode, 128);
+      if (zoneError) return { changes: [], errors: [{ outcome: classifyProviderOutcome(zoneError) }], coverage: token ? "sinceIssuedCursor" : start };
       const next = boundedString(zoneResult.syncToken, 8192);
-      if (token !== undefined && next === token) throw malformedContinuation();
-      return { changes: boundedArray(zoneResult.records, 100).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest })), coverage: token ? "sinceIssuedCursor" : start, continuationHandle: next ? this.handles.issue("zoneCursor", context, next) : undefined };
+      const moreComing = zoneResult.moreComing === true;
+      if (moreComing && (!next || next === token)) throw malformedContinuation();
+      return { changes: boundedArray(zoneResult.records, 100).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest })), errors: [], coverage: token ? "sinceIssuedCursor" : start, continuationHandle: moreComing && next ? this.handles.issue("zoneCursor", context, next) : undefined };
     });
   }
 
@@ -195,7 +204,7 @@ export class DiagnosticService {
     const leftProfile = this.#profile(left); const rightProfile = this.#profile(right);
     const [leftResolved, rightResolved] = await Promise.all([this.sessions.currentView(leftProfile, left.scope), this.sessions.currentView(rightProfile, right.scope)]);
     const keyed = (names: readonly string[], records: readonly RecordObservation[]): Readonly<Record<string, RecordObservation>> => Object.fromEntries(names.map((name, index) => [selectorDigest(name), records[index] ?? { handle: `missing_${index}`, outcome: "unknown" as const, deleted: "unknown" as const }]));
-    const mapping = leftResolved.containerId === rightResolved.containerId && leftResolved.environment === rightResolved.environment ? "verified" as const : "explicitUnverified" as const;
+    const mapping = leftResolved.principalBound && rightResolved.principalBound && leftResolved.containerId === rightResolved.containerId && leftResolved.environment === rightResolved.environment ? "verified" as const : "explicitUnverified" as const;
     return { left: leftResult.status, right: rightResult.status, samePrincipal: leftResolved.principalAlias === rightResolved.principalAlias, conclusions: compareObservations({ view: leftResolved, observedFrom: this.now().toISOString(), observedTo: this.now().toISOString(), identityMapping: mapping, records: keyed(recordNames, leftRecords), limitations: leftResult.status === "rejected" ? ["Left view failed independently."] : [] }, { view: rightResolved, observedFrom: this.now().toISOString(), observedTo: this.now().toISOString(), identityMapping: mapping, records: keyed(recordNames, rightRecords), limitations: rightResult.status === "rejected" ? ["Right view failed independently."] : [] }) };
   }
 
@@ -206,7 +215,7 @@ export class DiagnosticService {
     if (fields.some((field) => !profile.recordPolicy.readablePayloadFields.includes(field))) throw invalidInput("A requested payload field is not authorized by startup policy.");
     const digest = selectorDigest({ zone, recordNames, fields });
     const handleContext = this.#handleContext(await this.sessions.currentView(profile, view.scope), "lookupRecords", digest, zone);
-    return this.#remote("lookupRecords", view, { records: recordNames.map((recordName) => ({ recordName, zoneID: zone })), desiredKeys: fields }, (body, selectedProfile) => {
+    return this.#remote("lookupRecords", view, { zoneID: zone, records: recordNames.map((recordName) => ({ recordName })), desiredKeys: fields, numbersAsStrings: true }, (body, selectedProfile) => {
       const returned = boundedArray(asObject(body).records, recordNames.length);
       return recordNames.map((_, index) => returned[index]
         ? projectRecord(asObject(returned[index]) as WireRecord, selectedProfile, zone, this.handles, { ...handleContext, operation: "record" }, fields)
@@ -269,6 +278,12 @@ function boundedString(value: unknown, maximum: number): string | undefined { re
 function boundedArray(value: unknown, maximum: number): readonly unknown[] { if (!Array.isArray(value)) return []; if (value.length > maximum) throw safeError({ code: "responseBoundExceeded", message: "CloudKit returned too many collection entries.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Narrow the selector or page size." }); return value; }
 function asObject(value: unknown): Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function normalizeEnum(value: unknown, supported: readonly string[]): string { return typeof value === "string" && supported.includes(value) ? value : "unknown"; }
+function normalizeShareEnum(value: unknown): string {
+  if (typeof value !== "string") return "unknown";
+  const normalized = value.toUpperCase().replaceAll("_", "");
+  return ({ ZONEWIDE: "zoneWide", RECORDHIERARCHY: "recordHierarchy", OWNER: "owner", ADMINISTRATOR: "administrator", USER: "user", PUBLICUSER: "publicUser", INVITED: "invited", PENDING: "invited", ACCEPTED: "accepted", REMOVED: "removed", NONE: "none", READONLY: "readOnly", READWRITE: "readWrite" } as Record<string, string>)[normalized] ?? "unknown";
+}
+function classifyProviderOutcome(code: string | undefined): "notFoundInView" | "inaccessible" | "unknown" { if (code === "NOT_FOUND") return "notFoundInView"; if (code === "ACCESS_DENIED" || code === "AUTHENTICATION_REQUIRED") return "inaccessible"; return "unknown"; }
 function fieldValue(value: unknown): unknown { const object = asObject(value); return "value" in object ? object.value : undefined; }
 function invalidInput(message: string) { return safeError({ code: "invalidInput", message, execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Use the bounded schema and values returned by get_context or discovery." }); }
 function malformedContinuation() { return safeError({ code: "malformedResponse", message: "CloudKit repeated the active continuation marker.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Stop traversal and inspect provider compatibility before continuing." }); }

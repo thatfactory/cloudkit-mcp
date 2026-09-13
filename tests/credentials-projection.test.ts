@@ -35,3 +35,10 @@ test("payload projection returns only selected allowed fields and redacts token-
   assert.deepEqual(observation.fields?.secretField, { state: "returned", value: { accessToken: "[redacted]" } });
   assert.equal(observation.fields?.notRequested, undefined);
 });
+
+test("per-item errors win over record identity fields", () => {
+  const profile: Profile = { id: "owner", containerId: "iCloud.com.example", environment: "development", backend: "web-services", authenticationMode: "web-user", credentialRef: "owner", allowedScopes: ["private"], recordPolicy: { allowedTypes: ["Entry"], queryableFields: [], readablePayloadFields: [], discloseRecordNames: false, discloseZoneNames: false } };
+  const context = { principalEpoch: "epoch", profileId: "owner", containerId: profile.containerId, environment: profile.environment, scope: "private" as const, backend: "web-services" as const, operation: "record", selectorDigest: "digest", zoneOwner: "owner-id", zoneName: "Inventory" };
+  const observation = projectRecord({ recordName: "present-in-error", serverErrorCode: "NOT_FOUND" }, profile, { zoneName: "Inventory", ownerRecordName: "owner-id" }, new HandleRegistry(), context);
+  assert.equal(observation.outcome, "notFoundInView");
+});
