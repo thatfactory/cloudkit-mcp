@@ -125,6 +125,10 @@ export class DiagnosticService {
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const referenceResult = await this.sessions.execute(profile, view.scope, "lookupRecords", { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true });
     const record = asObject(boundedArray(asObject(referenceResult.body).records, 1)[0]);
+    const referenceError = boundedString(record.serverErrorCode, 128);
+    if (referenceError) {
+      return { status: "unavailable", execution: "completed", remoteDataEffect: "none" as const, sessionEffect: referenceResult.replacementWebAuthenticationToken ? "rotated" as const : "unchanged" as const, completeness: "completeForRequest" as const, context: { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: view.scope, backend: profile.backend }, observedAt: this.now().toISOString(), limitations: ["The selected record lookup returned a per-item provider error."], data: { outcome: classifyProviderOutcome(referenceError) } };
+    }
     const shareReference = asObject(record.share);
     const shareRecordName = boundedString(shareReference.recordName, 1024);
     if (!shareRecordName) {
@@ -132,6 +136,8 @@ export class DiagnosticService {
     }
     return this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName: shareRecordName }], desiredKeys: [], numbersAsStrings: true }, (body) => {
       const share = asObject(boundedArray(asObject(body).records, 1)[0]);
+      const shareError = boundedString(share.serverErrorCode, 128);
+      if (shareError) return { outcome: classifyProviderOutcome(shareError), limitations: ["The share-record lookup returned a per-item provider error."] };
       const fields = asObject(share.fields);
       const currentParticipant = asObject(fieldValue(fields.currentUserParticipant) ?? share.currentUserParticipant);
       const participantsValue = fieldValue(fields.participants) ?? share.participants;
@@ -171,7 +177,7 @@ export class DiagnosticService {
       const entries = boundedArray(object.zones, 100);
       const errors = entries.filter((item) => boundedString(asObject(item).serverErrorCode, 128)).map((item) => ({ outcome: classifyProviderOutcome(boundedString(asObject(item).serverErrorCode, 128)) }));
       const changedZones = entries.filter((item) => !boundedString(asObject(item).serverErrorCode, 128)).map((item) => { const changedZone = parseZone(item); return { handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: changedZone.ownerRecordName, zoneName: changedZone.zoneName }, changedZone), deleted: asObject(item).deleted === true }; });
-      return { changedZones, errors, coverage: token ? "sinceIssuedCursor" : start, continuationHandle: moreComing && next ? this.handles.issue("databaseCursor", context, next) : undefined };
+      return { changedZones, errors, coverage: token ? "sinceIssuedCursor" : start, moreComing, continuationHandle: next ? this.handles.issue("databaseCursor", context, next) : undefined };
     });
   }
 
@@ -192,7 +198,7 @@ export class DiagnosticService {
       const next = boundedString(zoneResult.syncToken, 8192);
       const moreComing = zoneResult.moreComing === true;
       if (moreComing && (!next || next === token)) throw malformedContinuation();
-      return { changes: boundedArray(zoneResult.records, 100).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest })), errors: [], coverage: token ? "sinceIssuedCursor" : start, continuationHandle: moreComing && next ? this.handles.issue("zoneCursor", context, next) : undefined };
+      return { changes: boundedArray(zoneResult.records, 100).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest })), errors: [], coverage: token ? "sinceIssuedCursor" : start, moreComing, continuationHandle: next ? this.handles.issue("zoneCursor", context, next) : undefined };
     });
   }
 
