@@ -89,11 +89,11 @@ Sources for the authentication distinctions: [A1, A9, A10]. The shared-database 
 
 ### 3.3 Backend decision rule
 
-Use a small `CloudKitReadBackend` interface. The proposed default is a bounded Web Services adapter for public reads and, if proven, authenticated-user reads. In Phase 00 compare that user path with CKTool JS using the same synthetic owner/participant scenario. Select **one** authenticated-user backend for the MVP. Do not implement both to postpone the decision.
+Use a small `CloudKitReadBackend` interface. The selected authenticated-user architecture is a bounded CloudKit Web Services adapter using an API token plus a web-authentication token. Keep the separately scoped public server-key adapter only where it provides documented functionality. The two credential paths remain separate implementations even though they share bounded transport and projection contracts.
 
-Choose CKTool JS instead if its supported API and token workflow demonstrably cover the required private/shared operations more safely or completely, and its networking can meet the same redaction, timeout, origin, and response-bound contracts. Keep the separately scoped public server-key adapter only where it provides documented functionality. An SDK is not exempt from transport or privacy controls.
+CKTool JS is excluded from the MVP. Apple's published automation workflow requires developer-oriented CloudKit Console credentials, ordinary invited-participant credential acquisition is not established, and the locally installed `cktool` 1.0.23001 surface does not cover the required zones, sharing, subscriptions, and database-change diagnostics. Reconsider it only through a separately reviewed capability spike that proves ordinary-participant authentication and the complete required read surface. An SDK is not exempt from transport or privacy controls.
 
-The decision must account for an ordinary invited family member, not just the developer who owns the container. A backend that works only after making every participant a developer-team member does not establish the intended WortJagd workflow.
+The remaining live feasibility gate must use an ordinary invited family member, not just the developer who owns the container. A successful implementation or fixture test does not prove that workflow, and making every participant a developer-team member is not acceptable evidence.
 
 ### 3.4 Operation-level evidence required
 
@@ -385,7 +385,8 @@ Work:
 
 - [ ] Reference and governance versions recorded.
 - [ ] Capability matrix and provenance baseline completed.
-- [ ] User-backend decision and owner/participant feasibility evidence recorded.
+- [x] Authenticated-user backend architecture selected from primary evidence.
+- [ ] Ordinary owner/participant private-to-shared workflow live-verified.
 
 ### Phase 01 - Repository, npm package, and MCP skeleton
 
@@ -716,7 +717,7 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | --- | --- | --- |
 | Reference repository baseline | Inspected: `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` | Record any deliberate baseline update |
 | AgentGuidelines version/commit | Latest release lookup returned `0.0.32`; commit pin pending | Resolve current stable tag and commit; install and audit |
-| Authenticated-user backend | Web Services preferred candidate; CKTool JS evaluated alternative | Select one after two-account evidence |
+| Authenticated-user backend | Selected architecture: CloudKit Web Services with API token plus web-authentication token; live feasibility pending | Prove the selected path with ordinary owner/participant accounts; CKTool JS is excluded from the MVP because ordinary-participant authentication and the full diagnostic surface are not established |
 | Normal participant-account authentication | Pending | Prove without assuming developer-team enrollment |
 | Owner/private and participant/shared named lookup | Documented API possibility; live test pending | Synthetic two-account result |
 | Shared-zone discovery | Pending for selected backend | Verified support, explicit lookup-only mode, or precise limitation |

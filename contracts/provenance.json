@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-13",
+  "referenceRepository": {
+    "repository": "thatfactory/app-store-connect-mcp",
+    "commit": "6d818dd57cbdf7b079388be14fb7a1cdc9060f02",
+    "verification": "local immutable commit resolved"
+  },
+  "governance": {
+    "repository": "thatfactory/agent-guidelines",
+    "version": "0.0.32",
+    "commit": "7d766ecd9d8d84786c81e169221eb42434c2ad93",
+    "verification": "tag commit and synchronized subtree"
+  },
+  "backendDecision": {
+    "selected": "cloudkit-web-services",
+    "authentication": "api-token-plus-web-authentication-token",
+    "status": "architectureSelectedLiveFeasibilityPending",
+    "excludedForMVP": [
+      {
+        "backend": "cktool-js",
+        "reason": "Ordinary invited-participant credential acquisition and the complete required diagnostic surface are not established by primary documentation or the installed cktool 1.0.23001 surface."
+      }
+    ]
+  },
+  "sources": [
+    {
+      "id": "A1",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/SettingUpWebServices.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["fixed origin", "api token user authentication", "server key signing", "single-round-trip web token rotation"]
+    },
+    {
+      "id": "A2",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/LookupRecords.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["records lookup operation", "public private shared scopes"]
+    },
+    {
+      "id": "A3",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/QueryingRecords.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["records query operation", "public private shared scopes", "desired keys", "continuation markers"]
+    },
+    {
+      "id": "A4-A5",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GettingAllZones.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["zones list and lookup public private scopes"],
+      "limitations": ["shared scope not established"]
+    },
+    {
+      "id": "A6-A7",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingDatabaseChanges(changeszone).html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["database and zone changes private shared scopes"]
+    },
+    {
+      "id": "A9-A10",
+      "url": "https://developer.apple.com/icloud/cloudkit/automating/",
+      "kind": "primaryDocumentation",
+      "supports": ["CKTool management and user token distinction", "developer automation positioning"]
+    },
+    {
+      "id": "A11",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GetSubscriptions.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["subscriptions list public private scopes"],
+      "limitations": ["shared scope not established"]
+    }
+  ],
+  "liveEvidence": {
+    "status": "notRun",
+    "limitations": [
+      "No CloudKit API token, server key, web-authentication token, test container, owner account, or ordinary invited-participant account was supplied.",
+      "No capability is represented as live verified."
+    ]
+  }
+}
