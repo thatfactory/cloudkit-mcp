@@ -1,9 +1,6 @@
 # CloudKit MCP - Implementation Plan
 
-Status: implementation-ready roadmap; CloudKit live-access gates remain unverified.
-Prepared: 2026-09-13.
-Primary requirements: the supplied `CloudKitMCP.md` handoff, with the subsequently agreed naming change.
-Suggested repository location: `Documentation/ImplementationPlan.md`.
+Status: implementation-ready roadmap; CloudKit live-access gates remain unverified. Prepared: 2026-09-13. Primary requirements: the supplied `CloudKitMCP.md` handoff, with the subsequently agreed naming change. Suggested repository location: `Documentation/ImplementationPlan.md`.
 
 | Identity | Value |
 | --- | --- |
@@ -383,8 +380,8 @@ Work:
 
 **Exit gate:** the authentication route and core owner/private-to-participant/shared record path are demonstrated, or recorded as a blocking unknown with an exact manual action needed. Missing credentials are not evidence that Apple's API is unsupported. Offline/public engineering may continue, but a public-only build cannot be described as the completed WortJagd MVP. Unavailable secondary metadata may remain a documented capability limitation where the supported API genuinely does not expose it.
 
-- [ ] Reference and governance versions recorded.
-- [ ] Capability matrix and provenance baseline completed.
+- [x] Reference and governance versions recorded.
+- [x] Capability matrix and provenance baseline completed.
 - [x] Authenticated-user backend architecture selected from primary evidence.
 - [ ] Ordinary owner/participant private-to-shared workflow live-verified.
 
@@ -405,8 +402,8 @@ Work:
 
 **Exit gate:** offline discovery works from the actual package, no secret provider/network is touched, and the first CI pipeline is green.
 
-- [ ] Skeleton, governance, and scripts implemented.
-- [ ] Offline MCP and external package smoke tests pass.
+- [x] Skeleton, governance, and scripts implemented.
+- [x] Offline MCP and external package smoke tests pass.
 
 ### Phase 02 - Profiles, domain identities, privacy, and result schemas
 
@@ -424,8 +421,8 @@ Work:
 
 **Exit gate:** invalid or forbidden identities are rejected before secret resolution or network access, and every projected result passes its schema and privacy assertions.
 
-- [ ] Profile/identity models implemented.
-- [ ] Result, redaction, capability, and error contracts covered by tests.
+- [x] Profile/identity models implemented.
+- [x] Result, redaction, capability, and error contracts covered by synthetic tests.
 
 ### Phase 03 - Bounded transport, request signing, and public reads
 
@@ -443,8 +440,8 @@ Work:
 
 **Exit gate:** approved public reads work against fixtures and a separately authorized synthetic live target; every non-read operation is unreachable. Verify signing live before claiming real server-key support.
 
-- [ ] Operation registry and bounded transport implemented.
-- [ ] Signing, retries, error parsing, and public probe validated.
+- [x] Operation registry and bounded transport implemented.
+- [ ] Signing, retry guidance, error parsing, and public probe live-validated; deterministic signing and transport tests pass, while automatic retries remain deliberately disabled.
 
 ### Phase 04 - Manual user authentication and session isolation
 
@@ -464,8 +461,8 @@ Work:
 
 **Exit gate:** synthetic owner/private and participant/shared reads succeed with isolated credential material, wrong-account reuse fails closed, and the documented manual authentication process is reproducible. Any remaining browser/callback work stays behind its own verification gate.
 
-- [ ] Manual credential lifecycle implemented.
-- [ ] Principal binding, session isolation, and uncertainty behavior validated.
+- [x] Manual credential lifecycle implemented.
+- [x] Principal binding, session isolation, and uncertainty behavior validated synthetically.
 
 ### Phase 05 - Zone discovery and owner-aware addressing
 
@@ -483,8 +480,8 @@ Work:
 
 **Exit gate:** a tool result identifies owner/private and participant/shared views without conflating either with a separate same-named zone.
 
-- [ ] Zone tools and owner-safe selectors implemented.
-- [ ] Scope, ownership, and collection completeness tests pass.
+- [x] Zone tools and owner-safe selectors implemented.
+- [x] Scope, ownership, and collection completeness synthetic tests pass.
 
 ### Phase 06 - Record lookup, indexed queries, and explicit payload access
 
@@ -500,9 +497,9 @@ Work:
 
 **Exit gate:** lookup and query semantics are distinct, paging never skips withheld items, default tools return no vocabulary payloads, and authorized selected-field reads remain narrowly scoped.
 
-- [ ] Named metadata lookup complete.
-- [ ] Typed query and cursor handling complete.
-- [ ] Explicit payload projection and privacy tests complete.
+- [x] Named metadata lookup complete.
+- [x] Typed query and cursor handling complete for the implemented contract.
+- [x] Explicit payload projection and privacy tests complete.
 
 ### Phase 07 - Shares and participant topology
 
@@ -520,8 +517,8 @@ Work:
 
 **Exit gate:** supported sharing facts are established from evidence. Where zone-wide metadata is not exposed by the chosen backend, return the exact missing field/capability and manual follow-up; never report a fabricated `false` value.
 
-- [ ] Share discovery and topology projection complete.
-- [ ] Mode, role, privacy, and no-invitation-mutation tests pass.
+- [x] Share discovery and topology projection complete for the implemented contract.
+- [x] Mode, role, privacy, and no-invitation-mutation synthetic tests pass.
 
 ### Phase 08 - Subscriptions and change-state diagnostics
 
@@ -539,8 +536,8 @@ Keep tokens inside the process-bound handle registry. No raw token export/import
 
 **Exit gate:** supported subscriptions and change evidence are visible with exact scope and coverage. The server reports app-local synchronization state as unavailable unless separate evidence is supplied; it does not infer a stale application cursor from remote-token inequality.
 
-- [ ] Supported subscription diagnostics complete.
-- [ ] Change feeds, tombstones, coverage, and cursor recovery complete.
+- [x] Supported subscription diagnostics complete; unverified shared listing remains gated.
+- [x] Change feeds, tombstones, bounded coverage, and process-local cursor recovery implemented.
 
 ### Phase 09 - Independent view comparison and diagnostic reasoning
 
@@ -573,8 +570,8 @@ Suggested diagnostic result categories:
 
 **Exit gate:** every conclusion points to bounded tool evidence and distinguishes fact from hypothesis. No path reports upload failure or stale app cursor solely because a remote record is missing or two tokens differ.
 
-- [ ] Pure comparison engine and fixtures implemented.
-- [ ] Independent MCP orchestration and evidence-based conclusions validated.
+- [x] Pure comparison engine and fixtures implemented.
+- [x] Independent orchestration and evidence-based conclusions validated synthetically.
 
 ### Phase 10 - Hardening, acceptance, exact-head review, and npm release
 
@@ -647,15 +644,12 @@ Illustrative consumer configuration after a successful release; no secret is emb
 }
 ```
 
-The final README must use the actual implemented CLI/schema and a released pinned version, not copy this illustrative configuration without testing it.
-The final README must not mention other projects like WortJagd or app-store-connect-mcp; treat it as an isolated package, which it is
-Fix the badges of the final README, as they were copied from the app-store-connect-mcp project.
-Fill the // TBD sections of the final README where appropriate, or remove the section if no longer needed; you can also add sections that are missing.
+The final README must use the actual implemented CLI/schema and a released pinned version, not copy this illustrative configuration without testing it. The final README must not mention other projects like WortJagd or app-store-connect-mcp; treat it as an isolated package, which it is. Fix the badges of the final README, as they were copied from the app-store-connect-mcp project. Fill the `// TBD` sections of the final README where appropriate, or remove the section if no longer needed; you can also add sections that are missing.
 
 **Exit gate:** all applicable MVP requirements have either demonstrated behavior or evidence-backed platform limitations; the core private/shared inventory workflow is proven; exact-head review and repository/release gates pass; the authorized package can be installed and discovered without credentials.
 
 - [ ] Automated hardening and two-account acceptance complete.
-- [ ] Package-content and external-install gates complete.
+- [x] Package-content and external-install gates complete.
 - [ ] Latest applicable governance and exact-head review complete.
 - [ ] Owner-authorized npm bootstrap/publishing configured.
 - [ ] Released artifact integrity, provenance where eligible, and post-publish smoke verified.
@@ -716,18 +710,18 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Decision / evidence | Initial state | Required resolution |
 | --- | --- | --- |
 | Reference repository baseline | Inspected: `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` | Record any deliberate baseline update |
-| AgentGuidelines version/commit | Latest release lookup returned `0.0.32`; commit pin pending | Resolve current stable tag and commit; install and audit |
+| AgentGuidelines version/commit | Installed `0.0.32` from commit `7d766ecd9d8d84786c81e169221eb42434c2ad93` as a provenance-preserved subtree | Recheck the stable release before a later release cycle |
 | Authenticated-user backend | Selected architecture: CloudKit Web Services with API token plus web-authentication token; live feasibility pending | Prove the selected path with ordinary owner/participant accounts; CKTool JS is excluded from the MVP because ordinary-participant authentication and the full diagnostic surface are not established |
 | Normal participant-account authentication | Pending | Prove without assuming developer-team enrollment |
-| Owner/private and participant/shared named lookup | Documented API possibility; live test pending | Synthetic two-account result |
+| Owner/private and participant/shared named lookup | Synthetic isolated-profile lookup and comparison pass; live test pending | Run the two-account live acceptance harness with a dedicated container |
 | Shared-zone discovery | Pending for selected backend | Verified support, explicit lookup-only mode, or precise limitation |
 | Zone-wide share discovery/mode | Pending | Proven metadata or declared backend limitation |
 | Native database subscriptions through selected API | Pending | Exact type/scope visibility contract |
 | Minimum-field upstream projection | Pending | Demonstrate behavior, including empty field selection |
-| User credential import and storage | Proposed contract | Provider-specific secure input, lifecycle, storage and locking tests |
-| Query/date/number/error wire contracts | Pending | Fixtures plus documented provenance; resolve archived-doc inconsistencies explicitly |
-| Runtime/platform support | Node 24+ proposed; POSIX store first | Tested platform matrix; no untested Windows credential-storage claim |
-| npm scope/name/publisher | Not checked for the new package | Owner verifies package authority and configures publication |
+| User credential import and storage | Hidden terminal import, safe status/removal, owner-only atomic storage, cross-process lease, rotation, and uncertainty tests implemented | Live credential lifecycle remains pending |
+| Query/date/number/error wire contracts | Synthetic fixtures and bounded projections implemented; live wire verification pending | Resolve provider differences during live acceptance without weakening the closed registry |
+| Runtime/platform support | Node 24+ with a POSIX-only credential-store claim; local Node 25 package gate passes | Add other platforms only with their own credential-store evidence |
+| npm scope/name/publisher | Registry lookup found the package name unclaimed; publishing workflow is configured but authority is not assumed | Owner configures trusted publishing and separately authorizes a release |
 | Full live acceptance | Not run | Date, backend/version, reviewed SHA, outcomes and limitations |
 | Exact-head code review | Not performed by this plan | Record actual PR/base/head and result |
 | npm publication | Not authorized or performed by this plan | Owner-authorized release with integrity and install evidence |
@@ -744,75 +738,52 @@ References below distinguish supplied requirements, observed repository patterns
 
 All R-series references use commit `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` of `thatfactory/app-store-connect-mcp`.
 
-**[R1] Package metadata and validation scripts.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/package.json`
+**[R1] Package metadata and validation scripts.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/package.json`
 
-**[R2] Architecture and trust boundaries.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Architecture.md`
+**[R2] Architecture and trust boundaries.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Architecture.md`
 
-**[R3] MCP server composition and packaged resources.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/src/server.ts`
+**[R3] MCP server composition and packaged resources.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/src/server.ts`
 
-**[R4] Bounded transport and HTTP-method effect classification.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/src/api/client.ts`
+**[R4] Bounded transport and HTTP-method effect classification.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/src/api/client.ts`
 
-**[R5] Plan authorization, execution, uncertainty, and recovery.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Plan-and-Apply.md`
+**[R5] Plan authorization, execution, uncertainty, and recovery.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Plan-and-Apply.md`
 
-**[R6] Package validation and release/publication process.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Release.md`
+**[R6] Package validation and release/publication process.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/Documentation/Release.md`
 
-**[R7] Immutable-release preflight and npm publishing workflow.**
-`https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/.github/workflows/publish.yml`
+**[R7] Immutable-release preflight and npm publishing workflow.** `https://github.com/thatfactory/app-store-connect-mcp/blob/6d818dd57cbdf7b079388be14fb7a1cdc9060f02/.github/workflows/publish.yml`
 
 ### Primary CloudKit documentation
 
-**[A1] Composing Web Service Requests.** API-token, user-session, server-key, request-signing, and token-lifecycle baseline. Archived documentation; validate current behavior and exact encoding before enabling an adapter.
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/SettingUpWebServices.html`
+**[A1] Composing Web Service Requests.** API-token, user-session, server-key, request-signing, and token-lifecycle baseline. Archived documentation; validate current behavior and exact encoding before enabling an adapter. `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/SettingUpWebServices.html`
 
-**[A2] Fetching Records by Record Name (`records/lookup`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/LookupRecords.html`
+**[A2] Fetching Records by Record Name (`records/lookup`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/LookupRecords.html`
 
-**[A3] Fetching Records Using a Query (`records/query`).** Indexed-query semantics, asynchronous index updates, selected fields, and continuation markers.
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/QueryingRecords.html`
+**[A3] Fetching Records Using a Query (`records/query`).** Indexed-query semantics, asynchronous index updates, selected fields, and continuation markers. `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/QueryingRecords.html`
 
-**[A4] Fetching Zones (`zones/list`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GettingAllZones.html`
+**[A4] Fetching Zones (`zones/list`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GettingAllZones.html`
 
-**[A5] Fetching Zones by Identifier (`zones/lookup`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GettingZonesbyIdentifier.html`
+**[A5] Fetching Zones by Identifier (`zones/lookup`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GettingZonesbyIdentifier.html`
 
-**[A6] Fetching Database Changes (`changes/database`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingDatabaseChanges(changeszone).html`
+**[A6] Fetching Database Changes (`changes/database`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingDatabaseChanges(changeszone).html`
 
-**[A7] Fetching Record Zone Changes (`changes/zone`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingRecordZoneChanges(changeszone).html`
+**[A7] Fetching Record Zone Changes (`changes/zone`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingRecordZoneChanges(changeszone).html`
 
-**[A8] Types and Dictionaries.** Zone ownership, record/reference metadata, share participants, and caller participation. Archived examples contain inconsistencies; captured contracts must resolve behavior rather than silently treating every example as normative.
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/Types.html`
+**[A8] Types and Dictionaries.** Zone ownership, record/reference metadata, share participants, and caller participation. Archived examples contain inconsistencies; captured contracts must resolve behavior rather than silently treating every example as normative. `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/Types.html`
 
-**[A9] Automating CloudKit Development.** CKTool JS and the distinct management/user token boundary; interactive automation user tokens.
-`https://developer.apple.com/icloud/cloudkit/automating/`
+**[A9] Automating CloudKit Development.** CKTool JS and the distinct management/user token boundary; interactive automation user tokens. `https://developer.apple.com/icloud/cloudkit/automating/`
 
-**[A10] Using cktool.** Official token setup and automation workflow; not a requirement to shell out to Xcode from the npm server.
-`https://developer.apple.com/icloud/ck-tool/`
+**[A10] Using cktool.** Official token setup and automation workflow; not a requirement to shell out to Xcode from the npm server. `https://developer.apple.com/icloud/ck-tool/`
 
-**[A11] Fetching Subscriptions (`subscriptions/list`).**
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GetSubscriptions.html`
+**[A11] Fetching Subscriptions (`subscriptions/list`).** `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/GetSubscriptions.html`
 
-**[A12] Deprecated Fetching Record Changes (`records/changes`).** Points to `changes/zone`; retained here to prevent adopting the deprecated route.
-`https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/ChangeRecords.html`
+**[A12] Deprecated Fetching Record Changes (`records/changes`).** Points to `changes/zone`; retained here to prevent adopting the deprecated route. `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/ChangeRecords.html`
 
 ### MCP, npm, and repository governance
 
-**[M1] MCP tools specification.** Use the version actually supported by the chosen official SDK and target clients; the retrieved specification was dated 2026-07-28.
-`https://modelcontextprotocol.io/specification/2026-07-28/server/tools`
+**[M1] MCP tools specification.** Use the version actually supported by the chosen official SDK and target clients; the retrieved specification was dated 2026-07-28. `https://modelcontextprotocol.io/specification/2026-07-28/server/tools`
 
-**[N1] npm trusted publishing.** OIDC configuration, supported runners/toolchain, direct-publish permissions, and provenance eligibility. Reverify at release.
-`https://docs.npmjs.com/trusted-publishers/`
+**[N1] npm trusted publishing.** OIDC configuration, supported runners/toolchain, direct-publish permissions, and provenance eligibility. Reverify at release. `https://docs.npmjs.com/trusted-publishers/`
 
-**[G1] AgentGuidelines release lookup.** The lookup returned stable release `0.0.32` during this audit; implementation must resolve the then-current stable tag and immutable commit.
-`https://github.com/thatfactory/agent-guidelines/releases/tag/0.0.32`
+**[G1] AgentGuidelines release lookup.** The lookup returned stable release `0.0.32` during this audit; implementation must resolve the then-current stable tag and immutable commit. `https://github.com/thatfactory/agent-guidelines/releases/tag/0.0.32`
 
-**[G2] AgentGuidelines consumer integration.** Versioned subtree, marked root contracts, audit integration, and native consumer validator.
-`https://github.com/thatfactory/agent-guidelines/blob/0.0.32/README.md`
+**[G2] AgentGuidelines consumer integration.** Versioned subtree, marked root contracts, audit integration, and native consumer validator. `https://github.com/thatfactory/agent-guidelines/blob/0.0.32/README.md`

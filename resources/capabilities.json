@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "server": "cloudkit-mcp",
+  "version": "0.1.0",
+  "remoteDataEffect": "none",
+  "backend": "cloudkit-web-services",
+  "authentication": {
+    "serverKey": { "scopes": ["public"], "implemented": true, "liveVerified": false },
+    "apiTokenPublic": { "scopes": ["public"], "implemented": true, "liveVerified": false },
+    "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerified": false, "rotation": "single-request-transaction" }
+  },
+  "tools": [
+    "get_context",
+    "probe_access",
+    "list_zones",
+    "get_zone",
+    "get_records",
+    "query_records",
+    "read_record_fields",
+    "get_share",
+    "list_subscriptions",
+    "get_database_changes",
+    "get_zone_changes",
+    "compare_views"
+  ],
+  "limitations": [
+    "No operation has live CloudKit verification in the published source baseline.",
+    "Shared-zone listing and lookup remain disabled until separately live verified.",
+    "Shared subscription listing remains disabled until separately live verified.",
+    "Authentication login/callback automation is not implemented; auth import accepts an already-acquired token through a hidden terminal prompt.",
+    "App-local CKSyncEngine state, upload queues, notification delivery, mutation, invitation acceptance, and asset downloads are unavailable."
+  ]
+}

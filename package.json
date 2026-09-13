@@ -1,0 +1,42 @@
+{
+  "name": "@thatfactory/cloudkit-mcp",
+  "version": "0.1.0",
+  "description": "Inspect and debug CloudKit databases, records, zones, and sharing through a secure, read-only MCP server.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cloudkit-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "resources"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thatfactory/cloudkit-mcp.git"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "prepack": "npm run clean && npm run build",
+    "schemas:check": "node --import tsx scripts/generate-schemas.ts --check",
+    "package:verify": "node scripts/verify-package.mjs",
+    "smoke": "node scripts/pack-smoke.mjs",
+    "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  }
+}

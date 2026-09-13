@@ -1,47 +1,152 @@
 <p align="center">
-  <a href="https://www.npmjs.com/package/@thatfactory/app-store-connect-mcp"><img alt="NPM" src="https://img.shields.io/npm/v/@thatfactory/app-store-connect-mcp?logo=npm&logoColor=white"></a>
+  <a href="https://www.npmjs.com/package/@thatfactory/cloudkit-mcp"><img alt="NPM" src="https://img.shields.io/npm/v/@thatfactory/cloudkit-mcp?logo=npm&logoColor=white"></a>
   <a href="https://developers.openai.com/codex/mcp"><img alt="Codex MCP" src="https://img.shields.io/badge/Codex-MCP-1F70C1.svg?logo=icloud&logoColor=white"></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code/mcp"><img alt="Claude MCP" src="https://img.shields.io/badge/Claude-MCP-D97757.svg?logo=claude&logoColor=white"></a>
   <a href="https://en.wikipedia.org/wiki/MIT_License"><img alt="License" src="https://img.shields.io/badge/License-MIT-67ac5b.svg?logo=googledocs&logoColor=white"></a>
-  <a href="https://github.com/thatfactory/app-store-connect-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thatfactory/app-store-connect-mcp/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/thatfactory/app-store-connect-mcp/actions/workflows/nightly.yml"><img alt="Nightly" src="https://github.com/thatfactory/app-store-connect-mcp/actions/workflows/nightly.yml/badge.svg"></a>
+  <a href="https://github.com/thatfactory/cloudkit-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/thatfactory/cloudkit-mcp/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/thatfactory/cloudkit-mcp/actions/workflows/nightly.yml"><img alt="Nightly" src="https://github.com/thatfactory/cloudkit-mcp/actions/workflows/nightly.yml/badge.svg"></a>
 </p>
 
-# cloudkit-mcp
-Inspect and debug CloudKit databases, records, zones, and sharing through a secure, read-only MCP server. ☁️
+# CloudKit MCP
 
+Inspect and debug account-relative CloudKit databases, records, zones, sharing, subscriptions, and change state through a secure, read-only MCP server. ☁️
 
-## Features
+> [!IMPORTANT]
+> Version `0.1.0` is an implementation candidate until its live CloudKit and npm release gates are completed. Synthetic tests do not claim access to a real container or prove ordinary owner-to-participant sharing behavior.
 
-// TBD
+## Safety model
 
-| Feature | Tool(s) |
-| --- | --- |
+- The distributed server contains no CloudKit mutation operation and rejects `--allow-writes`.
+- Remote requests come from a closed operation registry and use only `https://api.apple-cloudkit.com`; redirects are rejected.
+- Profiles are immutable startup policy. Tool calls cannot expand scopes, record types, queryable fields, or payload fields.
+- User sessions are serialized across processes. CloudKit's single-use replacement token is committed atomically before another request can use the slot; uncertain sessions fail closed until reauthentication.
+- Credentials remain in an explicitly configured owner-only local directory and never appear in profile files, MCP parameters, stdout, diagnostics, fixtures, or the npm package. The POSIX file store is access-controlled but not inherently encrypted.
+- Record, zone, account, and cursor identifiers are projected as process-local opaque handles or keyed aliases by default. `read_record_fields` is the only payload-reading tool and requires exact policy-enabled fields.
+- Returned record content is untrusted data, never instructions to change policy or invoke another tool.
 
 ## Requirements
 
-// TBD
+- Node.js 24 or newer.
+- A CloudKit container and the provider-specific credential material for the selected profile.
+- POSIX ownership and mode semantics for the built-in local credential store. Windows credential storage is not claimed.
+- An API token plus an already-acquired web-authentication token for private/shared user access, or a server-to-server key/API token for permitted public reads.
 
-## Environment Variables
+CloudKit web-authentication login/callback automation is intentionally not implemented yet. Obtain the initial token through an official, separately controlled interactive flow and import it only through the hidden terminal prompt. Never paste credentials into an MCP request, chat, environment variable, command argument, or repository file.
 
-// TBD
+## Configuration
 
-## Claude Setup
+Profiles contain policy and credential references, never secret values:
 
-// TBD
+```json
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "owner-development",
+      "containerId": "iCloud.com.example.application",
+      "environment": "development",
+      "backend": "web-services",
+      "authenticationMode": "web-user",
+      "credentialRef": "owner-development",
+      "allowedScopes": ["private"],
+      "recordPolicy": {
+        "allowedTypes": ["ExampleRecord"],
+        "queryableFields": ["stableID"],
+        "readablePayloadFields": [],
+        "discloseRecordNames": false,
+        "discloseZoneNames": false
+      }
+    }
+  ]
+}
+```
 
-## Codex Setup
+Use absolute paths when starting the server. There are no credential environment variables and no automatic `.env`, browser-cookie, Keychain-enumeration, or repository configuration discovery paths.
 
-// TBD
+## Authentication commands
 
-## Available Tools
+```sh
+cloudkit-mcp auth import \
+  --profile owner-development \
+  --profiles /absolute/path/to/cloudkit-profiles.json \
+  --credential-store /absolute/private/path/cloudkit-credentials
 
-// TBD
+cloudkit-mcp auth status \
+  --profile owner-development \
+  --profiles /absolute/path/to/cloudkit-profiles.json \
+  --credential-store /absolute/private/path/cloudkit-credentials
+```
 
-## Example Prompts
+`auth import` requires an interactive terminal and reads secrets with echo disabled. `auth remove` deletes only the chosen local slot; it does not claim to revoke the remote Apple credential.
 
-// TBD
+## Codex setup
 
-## Local Development
+Until a release is published, build the checked-out source and configure its absolute executable path:
 
-// TBD
+```json
+{
+  "mcpServers": {
+    "cloudkit": {
+      "command": "/absolute/path/to/cloudkit-mcp/dist/index.js",
+      "args": [
+        "serve",
+        "--profiles",
+        "/absolute/path/to/cloudkit-profiles.json",
+        "--credential-store",
+        "/absolute/private/path/cloudkit-credentials"
+      ]
+    }
+  }
+}
+```
+
+After an authorized `0.1.0` npm release, replace the command with `npx` and pin `--package=@thatfactory/cloudkit-mcp@0.1.0` before the executable name.
+
+## Claude Code setup
+
+```sh
+claude mcp add cloudkit -- \
+  /absolute/path/to/cloudkit-mcp/dist/index.js serve \
+  --profiles /absolute/path/to/cloudkit-profiles.json \
+  --credential-store /absolute/private/path/cloudkit-credentials
+```
+
+## Available tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_context` | Offline profiles, policy, and capability state without credential or network access |
+| `probe_access` | Minimal authenticated current-principal probe for one explicit view |
+| `list_zones` | Bounded zone discovery where that scope is verified |
+| `get_zone` | Exact owner-aware zone lookup |
+| `get_records` | Metadata-first lookup of at most 20 exact records |
+| `query_records` | Bounded typed indexed query with policy-enabled filters |
+| `read_record_fields` | Explicit access to at most 10 policy-enabled payload fields |
+| `get_share` | Privacy-safe share mode, role, permission, and participant-state summaries |
+| `list_subscriptions` | Safe structural subscription summaries for supported scopes |
+| `get_database_changes` | Changed-zone evidence using process-bound cursors |
+| `get_zone_changes` | Record changes and tombstones using process-bound cursors |
+| `compare_views` | Independent bounded comparison of two explicit authorized views |
+
+Shared-zone discovery and shared subscription listing remain capability-gated because the published API documentation does not establish them. A tool reports that limitation rather than interpreting it as an empty result.
+
+## Example prompts
+
+- “Show the configured CloudKit profiles and explain which capabilities are documented, implemented, live verified, and currently authorized.”
+- “Look up these exact record names in the owner private view and participant shared view, then compare only the available metadata.”
+- “Inspect the selected zone's share topology without returning participant identities or share URLs.”
+- “Read zone changes from the beginning and explain exactly what bounded coverage the returned cursor provides.”
+
+The Web Services implementation deliberately rejects `currentBaseline` without an issued cursor because the reviewed public contract does not establish a non-scanning baseline operation. It also does not retry requests automatically; safe errors instead state whether a caller retry is eligible.
+
+## Local development
+
+```sh
+npm ci
+npm run check
+npm pack --json --dry-run
+```
+
+`npm run check` performs schema/policy consistency, strict type checking, credential-free deterministic tests, a clean build, package-content verification, and installation/execution from a real tarball outside the checkout. Ordinary tests block or inject networking and contain synthetic data only.
+
+Architecture decisions, capability gates, test expectations, and release evidence are maintained in [Documentation/ImplementationPlan.md](Documentation/ImplementationPlan.md). Approved dependency exceptions are recorded in [Documentation/Dependencies.md](Documentation/Dependencies.md).
