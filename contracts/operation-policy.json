@@ -15,7 +15,7 @@
     },
     {
       "id": "listZones",
-      "method": "POST",
+      "method": "GET",
       "path": "{scope}/zones/list",
       "effect": "read",
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
@@ -57,7 +57,7 @@
     },
     {
       "id": "listSubscriptions",
-      "method": "POST",
+      "method": "GET",
       "path": "{scope}/subscriptions/list",
       "effect": "read",
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],

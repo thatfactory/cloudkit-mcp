@@ -23,6 +23,22 @@ test("POST record reads remain allowed and use only the fixed origin", async () 
   assert.equal(observed?.searchParams.get("ckAPIToken"), "private-api-token");
 });
 
+test("documented list reads use GET without a request body", async () => {
+  const observations: Array<{ method?: string; body?: BodyInit | null }> = [];
+  const transport = new CloudKitTransport(async (_input, init) => {
+    observations.push({ method: init?.method, body: init?.body });
+    return new Response(JSON.stringify({ zones: [], subscriptions: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  const context = { containerId: "iCloud.com.example", environment: "development" as const, scope: "public" as const };
+  const credential = { mode: "api-token-public" as const, apiToken: "token" };
+  await transport.execute("listZones", context, credential, {});
+  await transport.execute("listSubscriptions", context, credential, {});
+  assert.deepEqual(observations, [{ method: "GET", body: undefined }, { method: "GET", body: undefined }]);
+});
+
 test("public API-token probe accepts only a documented authentication challenge", async () => {
   const transport = new CloudKitTransport(async () => new Response(JSON.stringify({ serverErrorCode: "AUTHENTICATION_REQUIRED", redirectURL: "https://icloud.example/sign-in" }), { status: 421 }));
   const result = await transport.execute("probeCurrentUser", { containerId: "iCloud.com.example", environment: "development", scope: "public" }, { mode: "api-token-public", apiToken: "token" }, {});

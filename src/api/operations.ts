@@ -36,7 +36,7 @@ const policies: Readonly<Record<OperationId, OperationPolicy>> = {
   },
   listZones: {
     id: "listZones",
-    method: "POST",
+    method: "GET",
     path: "/{scope}/zones/list",
     effect: "read",
     authenticationModes: ["server-key", "api-token-public", "web-user"],
@@ -76,7 +76,7 @@ const policies: Readonly<Record<OperationId, OperationPolicy>> = {
   },
   listSubscriptions: {
     id: "listSubscriptions",
-    method: "POST",
+    method: "GET",
     path: "/{scope}/subscriptions/list",
     effect: "read",
     authenticationModes: ["server-key", "api-token-public", "web-user"],
