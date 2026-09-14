@@ -121,7 +121,7 @@ function compareRecord(
       category: "visibilityMismatch",
       confidence: "medium",
       recordSelector: selector,
-      evidence: ["The record was present in one authorized view and absent, inaccessible, unknown, or unobserved in the other."],
+      evidence: ["The record was present in one authorized view and explicitly not found in the other."],
       limitations: ["This does not establish upload failure or global nonexistence.", ...limitations],
       nextStep: "Inspect sharing permission and perform exact lookup in the non-observing view; use client logs to assess upload state.",
     };

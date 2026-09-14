@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-13",
+  "recordedAt": "2026-09-14",
   "referenceRepository": {
     "repository": "thatfactory/app-store-connect-mcp",
     "commit": "6d818dd57cbdf7b079388be14fb7a1cdc9060f02",
@@ -48,6 +48,13 @@
       "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchingDatabaseChanges(changeszone).html",
       "kind": "primaryArchivedDocumentation",
       "supports": ["database and zone changes private shared scopes"]
+    },
+    {
+      "id": "A8",
+      "url": "https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/Types.html",
+      "kind": "primaryArchivedDocumentation",
+      "supports": ["zone ownership", "record and reference metadata", "share participants", "caller participation"],
+      "limitations": ["Archived examples contain inconsistencies; captured contracts remain authoritative for observed behavior."]
     },
     {
       "id": "A9-A10",

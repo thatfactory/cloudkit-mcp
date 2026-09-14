@@ -1,5 +1,4 @@
 <p align="center">
-  <a href="https://www.npmjs.com/package/@thatfactory/cloudkit-mcp"><img alt="NPM" src="https://img.shields.io/npm/v/@thatfactory/cloudkit-mcp?logo=npm&logoColor=white"></a>
   <a href="https://developers.openai.com/codex/mcp"><img alt="Codex MCP" src="https://img.shields.io/badge/Codex-MCP-1F70C1.svg?logo=icloud&logoColor=white"></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code/mcp"><img alt="Claude MCP" src="https://img.shields.io/badge/Claude-MCP-D97757.svg?logo=claude&logoColor=white"></a>
   <a href="https://en.wikipedia.org/wiki/MIT_License"><img alt="License" src="https://img.shields.io/badge/License-MIT-67ac5b.svg?logo=googledocs&logoColor=white"></a>
@@ -60,6 +59,8 @@ Profiles contain policy and credential references, never secret values:
   ]
 }
 ```
+
+Empty `allowedTypes` makes `query_records` unavailable for that profile. Empty `queryableFields` disables filtered queries, but an allowed record type can still use a zero-filter query. Empty `readablePayloadFields` keeps `read_record_fields` unavailable while metadata-only exact lookup remains usable. Add policy entries only for explicitly selected, privacy-safe schema elements.
 
 Use absolute paths when starting the server. There are no credential environment variables and no automatic `.env`, browser-cookie, Keychain-enumeration, or repository configuration discovery paths.
 
@@ -135,8 +136,8 @@ claude mcp add cloudkit -- \
 | Tool | Purpose |
 | --- | --- |
 | `get_context` | Offline profiles, policy, and capability state without credential or network access |
-| `probe_access` | Minimal authenticated current-principal probe for one explicit view |
-| `list_zones` | Bounded zone discovery where that scope is verified |
+| `probe_access` | Minimal authentication/current-principal probe; a public API token may yield only the documented user-authentication challenge |
+| `list_zones` | Bounded zone discovery for an enabled documented scope |
 | `get_zone` | Exact owner-aware zone lookup |
 | `get_records` | Metadata-first lookup of at most 20 exact records |
 | `query_records` | Bounded typed indexed query with policy-enabled filters |
@@ -145,9 +146,11 @@ claude mcp add cloudkit -- \
 | `list_subscriptions` | Safe structural subscription summaries for supported scopes |
 | `get_database_changes` | Changed-zone evidence using process-bound cursors |
 | `get_zone_changes` | Record changes and tombstones using process-bound cursors |
-| `compare_views` | Independent bounded comparison of two explicit authorized views |
+| `compare_views` | Exact-record comparison using two authorized views and independent `leftZone`/`rightZone` selectors |
 
 Generic shared `zones/list`/`zones/lookup` and shared subscription listing remain capability-gated because the published API documentation does not establish them. Shared-zone discovery instead uses the verified `changes/database` workflow. A tool reports an unverified limitation rather than interpreting it as an empty result.
+
+Historical, operation-specific implementation and live-evidence scope is available from `cloudkit://capabilities`; `get_context` reports only configured offline profile policy, and `probe_access` proves only the selected authentication/current-principal check. Current evidence includes private/shared exact record lookup and shared change reads. It does not include live query wire behavior, live server-key signing, private change feeds, authenticated public database reads, or available share topology for the canonical live record.
 
 ## Example prompts
 

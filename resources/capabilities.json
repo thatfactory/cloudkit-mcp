@@ -9,6 +9,16 @@
     "apiTokenPublic": { "scopes": ["public"], "implemented": true, "liveVerifiedScopes": ["public"] },
     "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerifiedScopes": ["private", "shared"], "rotation": "single-request-transaction" }
   },
+  "backendOperations": [
+    { "id": "probeCurrentUser", "implementationStatus": "implemented", "documentedScopes": ["public", "private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "verified", "liveVerifiedScopes": ["public", "private", "shared"], "lastObservedAt": "2026-09-14" },
+    { "id": "listZones", "implementationStatus": "implemented", "documentedScopes": ["public", "private"], "unverifiedScopes": ["shared"], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["private"], "lastObservedAt": "2026-09-14" },
+    { "id": "lookupZones", "implementationStatus": "implemented", "documentedScopes": ["public", "private"], "unverifiedScopes": ["shared"], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["private"], "lastObservedAt": "2026-09-14" },
+    { "id": "lookupRecords", "implementationStatus": "implemented", "documentedScopes": ["public", "private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["private", "shared"], "lastObservedAt": "2026-09-14" },
+    { "id": "queryRecords", "implementationStatus": "implemented", "documentedScopes": ["public", "private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "notVerified", "liveVerifiedScopes": [] },
+    { "id": "listSubscriptions", "implementationStatus": "implemented", "documentedScopes": ["public", "private"], "unverifiedScopes": ["shared"], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["private"], "lastObservedAt": "2026-09-14" },
+    { "id": "getDatabaseChanges", "implementationStatus": "implemented", "documentedScopes": ["private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["shared"], "lastObservedAt": "2026-09-14" },
+    { "id": "getZoneChanges", "implementationStatus": "implemented", "documentedScopes": ["private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "partiallyVerified", "liveVerifiedScopes": ["shared"], "lastObservedAt": "2026-09-14" }
+  ],
   "tools": [
     "get_context",
     "probe_access",
@@ -25,8 +35,11 @@
   ],
   "limitations": [
     "Live evidence is operation- and scope-specific; it does not imply full container access.",
+    "The public API-token live check proves the documented authentication challenge, not authenticated public database access.",
     "Server-key signing is implemented and synthetically verified but has not been live verified.",
-    "Query wire behavior and provider error/retry variants have not been live verified.",
+    "Query wire behavior and provider error/retry variants have no live-verified scope.",
+    "Canonical live share inspection returned unavailable through both verified views; topology availability is not claimed.",
+    "Change feeds have live evidence in shared scope; private-scope change behavior remains live-unverified.",
     "Shared-zone listing and lookup remain disabled until separately live verified.",
     "Shared subscription listing remains disabled until separately live verified.",
     "Authentication login/callback automation is not implemented; auth import accepts an already-acquired token through a hidden terminal prompt.",

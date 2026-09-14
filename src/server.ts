@@ -29,8 +29,8 @@ export function createServer(service: DiagnosticService): McpServer {
   const server = new McpServer({ name: "cloudkit-mcp", version: VERSION });
 
   register(server, "get_context", "Report offline profile policy and capability state without loading credentials or contacting Apple.", { profileId: z.string().min(1).max(255).optional() }, async ({ profileId }) => service.getContext(profileId));
-  register(server, "probe_access", "Perform one minimal authenticated read for an explicit profile and scope.", { view: viewSchema }, async ({ view }) => service.probeAccess(view));
-  register(server, "list_zones", "List bounded owner-aware zones for an explicit view where the scope is verified.", { view: viewSchema }, async ({ view }) => service.listZones(view));
+  register(server, "probe_access", "Perform one minimal authentication/current-principal probe; an API-token-public profile may return the documented user-authentication challenge without database access.", { view: viewSchema }, async ({ view }) => service.probeAccess(view));
+  register(server, "list_zones", "List bounded owner-aware zones for an explicit view in an enabled documented scope.", { view: viewSchema }, async ({ view }) => service.listZones(view));
   register(server, "get_zone", "Look up one exact owner-aware zone.", { view: viewSchema, zone: zoneSchema }, async ({ view, zone }) => service.getZone(view, zone));
   register(server, "get_records", "Look up metadata for at most twenty exact records in one owner-aware zone.", { view: viewSchema, zone: zoneSchema, recordNames: recordNamesSchema }, async ({ view, zone, recordNames }) => service.getRecords(view, zone, recordNames));
   register(server, "query_records", "Run one bounded typed indexed query; arbitrary predicates and cross-zone scans are unavailable.", {

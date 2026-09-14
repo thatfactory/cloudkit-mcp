@@ -57,7 +57,10 @@ test("comparison never calls one-sided absence an upload failure", () => {
   const view = { profileId: "owner", containerId: "iCloud.com.example", environment: "development" as const, scope: "private" as const, backend: "web-services" as const, principalAlias: "account-a", principalEpoch: "epoch-a" };
   const left: ViewObservation = { view, observedFrom: "a", observedTo: "b", identityMapping: "verified", limitations: [], records: { record: { handle: "left", outcome: "present", deleted: "notObserved" } } };
   const right: ViewObservation = { ...left, view: { ...view, profileId: "participant", scope: "shared", principalAlias: "account-b" }, records: { record: { handle: "right", outcome: "notFoundInView", deleted: "unknown" } } };
-  assert.equal(compareObservations(left, right)[0]?.category, "visibilityMismatch");
+  const conclusion = compareObservations(left, right)[0];
+  assert.equal(conclusion?.category, "visibilityMismatch");
+  assert.match(conclusion?.evidence.join(" ") ?? "", /explicitly not found/);
+  assert.doesNotMatch(conclusion?.evidence.join(" ") ?? "", /inaccessible|unknown/);
 });
 
 test("comparison fails closed for environments, identity uncertainty, partial reads, and differing metadata", () => {
