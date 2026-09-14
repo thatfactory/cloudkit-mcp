@@ -11,7 +11,7 @@
 Inspect and debug account-relative CloudKit databases, records, zones, sharing, subscriptions, and change state through a secure, read-only MCP server. ☁️
 
 > [!IMPORTANT]
-> Version `0.1.0` is an implementation candidate until its live CloudKit and npm release gates are completed. Synthetic tests do not claim access to a real container or prove ordinary owner-to-participant sharing behavior.
+> Version `0.1.0` is an unpublished release candidate. The enabled metadata-only owner/private and ordinary-participant/shared workflow has live evidence. Query wire behavior, server-key signing, private change feeds, and some secondary sharing capabilities remain explicitly live-unverified or unavailable in `cloudkit://capabilities`. npm publication is not authorized.
 
 ## Safety model
 
@@ -61,6 +61,8 @@ Profiles contain policy and credential references, never secret values:
 ```
 
 Empty `allowedTypes` makes `query_records` unavailable for that profile. Empty `queryableFields` disables filtered queries, but an allowed record type can still use a zero-filter query. Empty `readablePayloadFields` keeps `read_record_fields` unavailable while metadata-only exact lookup remains usable. Add policy entries only for explicitly selected, privacy-safe schema elements.
+
+The `0.1.0` release-acceptance profiles intentionally authorized metadata only: no record types, queryable fields, or payload fields were enabled. Their live acceptance therefore proves the documented core metadata workflow, not query or payload-read integration.
 
 Use absolute paths when starting the server. There are no credential environment variables and no automatic `.env`, browser-cookie, Keychain-enumeration, or repository configuration discovery paths.
 
