@@ -28,6 +28,8 @@
     "schemas:check": "node --import tsx scripts/generate-schemas.ts --check",
     "package:verify": "node scripts/verify-package.mjs",
     "smoke": "node scripts/pack-smoke.mjs",
+    "release:preflight": "node --import tsx scripts/release-preflight.ts",
+    "release:artifact": "node --import tsx scripts/release-artifact.ts",
     "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke"
   },
   "dependencies": {
