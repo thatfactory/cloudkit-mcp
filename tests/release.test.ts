@@ -15,6 +15,8 @@ test("publish workflow is release-only and publishes the reverified exact tarbal
   assert.match(workflow, /environment: npm-publish/); assert.match(workflow, /id-token: write/);
   assert.match(workflow, /preflight:[\s\S]*permissions:\n\s+contents: read/); assert.match(workflow, /needs: preflight/);
   assert.match(workflow, /git\/ref\/tags\/\$RELEASE_TAG/); assert.match(workflow, /OBJECT_SHA" = "\$GITHUB_SHA/); assert.match(workflow, /ref: \$\{\{ needs\.preflight\.outputs\.sha \}\}/); assert.match(workflow, /release-artifact\.ts create/);
+  assert.match(workflow, /Reconcile an existing bootstrap publication[\s\S]*response\.status === 404[\s\S]*published\?\.dist\?\.integrity !== manifest\.integritySha512/);
+  assert.match(workflow, /if: steps\.registry\.outputs\.already-published != 'true'/);
   assert.match(workflow, /release-artifact\.ts verify[\s\S]*npm publish "\$TARBALL" --access public --provenance --ignore-scripts/);
   assert.doesNotMatch(workflow, /npm publish --access public/); assert.doesNotMatch(workflow, /NPM_TOKEN|NODE_AUTH_TOKEN/);
 });
