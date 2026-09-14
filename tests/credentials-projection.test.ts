@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, stat, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -24,6 +24,61 @@ test("credential store rejects a symlink slot", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-credentials-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
   const storeRoot = join(root, "store"); await mkdir(storeRoot, { mode: 0o700 }); await symlink("/etc/passwd", join(storeRoot, "owner.json"));
   await assert.rejects(new CredentialStore(storeRoot).read("owner"));
+});
+
+test("independent stores serialize one rotating credential transaction", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-credentials-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
+  const firstStore = new CredentialStore(root);
+  const secondStore = new CredentialStore(root);
+  await firstStore.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "first", generation: 0, principalEpoch: "epoch" });
+  let releaseFirst: (() => void) | undefined;
+  const firstEntered = Promise.withResolvers<void>();
+  const first = firstStore.withLease("owner", async (credential) => {
+    assert.equal(credential.class === "web-user" && credential.webAuthenticationToken, "first");
+    firstEntered.resolve();
+    await new Promise<void>((resolvePromise) => { releaseFirst = resolvePromise; });
+    return { value: undefined, replacement: { ...credential, webAuthenticationToken: "second", generation: 1 } };
+  });
+  await firstEntered.promise;
+  let secondEntered = false;
+  const second = secondStore.withLease("owner", async (credential) => {
+    secondEntered = true;
+    assert.equal(credential.class === "web-user" && credential.webAuthenticationToken, "second");
+    return { value: undefined, replacement: { ...credential, webAuthenticationToken: "third", generation: 2 } };
+  });
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+  assert.equal(secondEntered, false);
+  releaseFirst?.();
+  await Promise.all([first, second]);
+  const saved = await firstStore.read("owner");
+  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, "third");
+  assert.equal(saved.generation, 2);
+});
+
+test("stale credential locks fail closed without invoking the operation", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-credentials-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
+  const store = new CredentialStore(root);
+  await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
+  const lock = join(root, "owner.json.lock");
+  await mkdir(lock, { mode: 0o700 });
+  const stale = new Date(Date.now() - 60_000);
+  await utimes(lock, stale, stale);
+  let invoked = false;
+  await assert.rejects(store.withLease("owner", async () => { invoked = true; return { value: undefined }; }), /stale or abandoned lock/);
+  assert.equal(invoked, false);
+});
+
+test("failed atomic replacement invalidates the consumed credential slot", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-credentials-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
+  const store = new CredentialStore(root, async () => { throw new Error("private filesystem detail"); });
+  await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
+  await assert.rejects(store.withLease("owner", async (credential) => ({ value: undefined, replacement: { ...credential, generation: 1 } })), (error: unknown) => {
+    const text = JSON.stringify((error as { details?: unknown }).details);
+    assert.match(text, /could not be committed atomically/);
+    assert.equal(text.includes("private filesystem detail"), false);
+    return true;
+  });
+  assert.deepEqual(await store.status("owner"), { credentialRef: "owner", available: false });
 });
 
 test("payload projection returns only selected allowed fields and redacts token-like data", () => {

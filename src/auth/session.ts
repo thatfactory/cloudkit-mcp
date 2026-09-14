@@ -36,7 +36,7 @@ export class SessionManager {
         const token = result.replacementWebAuthenticationToken;
         if (!token) {
           replacement = { ...stored, uncertain: true };
-          effectiveResult = { ...result, error: { code: "authenticationUncertain", message: "The rotating CloudKit user session did not yield a durable replacement token.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." } };
+          if (!result.error) effectiveResult = { ...result, error: { code: "authenticationUncertain", message: "The rotating CloudKit user session did not yield a durable replacement token.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." } };
         } else {
           const response = typeof result.body === "object" && result.body !== null ? result.body as Record<string, unknown> : {};
           const observedPrincipal = operation === "probeCurrentUser" && typeof response.userRecordName === "string" && response.userRecordName.length <= 1024 ? response.userRecordName : stored.principalRecordName;

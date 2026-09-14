@@ -652,7 +652,7 @@ The final README must use the actual implemented CLI/schema and a released pinne
 **Exit gate:** all applicable MVP requirements have either demonstrated behavior or evidence-backed platform limitations; the core private/shared inventory workflow is proven; exact-head review and repository/release gates pass; the authorized package can be installed and discovered without credentials.
 
 - [x] Deterministic transport/signing adversarial coverage complete.
-- [ ] Credential/session concurrency and recovery adversarial coverage complete.
+- [x] Credential/session concurrency and recovery adversarial coverage complete.
 - [ ] Query, pagination, projection, change, sharing, subscription, and comparison adversarial coverage complete.
 - [ ] Privacy-safe release-candidate live acceptance complete for the configured profiles.
 - [ ] Human-gated account-switch, expiry, server-key, and exact-selector evidence completed or retained as explicit limitations.
