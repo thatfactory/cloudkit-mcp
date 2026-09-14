@@ -31,8 +31,8 @@ test("synthetic contracts exercise the complete read-only diagnostic service", a
     }
     if (url.pathname.endsWith("/records/query")) return response({ records: [wireRecord("record-a")], continuationMarker: "next-page", ...token });
     if (url.pathname.endsWith("/subscriptions/list")) return response({ subscriptions: [{ subscriptionType: "zone", zoneID: { zoneName: "Inventory" } }], ...token });
-    if (url.pathname.endsWith("/changes/database")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], syncToken: "database-token", ...token });
-    if (url.pathname.endsWith("/changes/zone")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" }, records: [{ ...wireRecord("record-a"), deleted: false }], syncToken: "zone-token" }], ...token });
+    if (url.pathname.endsWith("/changes/database")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], syncToken: "database-token", moreComing: false, ...token });
+    if (url.pathname.endsWith("/changes/zone")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" }, records: [{ ...wireRecord("record-a"), deleted: false }], syncToken: "zone-token", moreComing: false }], ...token });
     if (url.pathname.endsWith("/records/lookup")) {
       assert.deepEqual(request.zoneID, { zoneName: "Inventory", ownerRecordName: "owner-principal" });
       assert.equal(request.numbersAsStrings, true);
@@ -59,9 +59,9 @@ test("synthetic contracts exercise the complete read-only diagnostic service", a
   assert.equal((await service.queryRecords(ownerView, zone, "Entry", [{ fieldName: "entryID", comparator: "EQUALS", fieldValue: { kind: "string", value: "synthetic" } }], 10)).data.records.length, 1);
   const share = await service.getShare(ownerView, zone, "record-a"); assert.equal(share.data.mode, "zoneWide"); assert.equal(JSON.stringify(share).includes("must-not-escape"), false);
   assert.equal((await service.listSubscriptions(ownerView)).data.subscriptions[0]?.type, "zone");
-  const databaseChanges = await service.getDatabaseChanges(ownerView, "beginning"); assert.equal(databaseChanges.data.changedZones.length, 1); assert.ok(databaseChanges.data.continuationHandle); assert.equal(databaseChanges.data.moreComing, false);
-  const zoneChanges = await service.getZoneChanges(ownerView, zone, "beginning"); assert.equal(zoneChanges.data.changes[0]?.outcome, "present"); assert.ok(zoneChanges.data.continuationHandle); assert.equal(zoneChanges.data.moreComing, false);
-  const comparison = await service.compareViews(ownerView, participantView, zone, ["record-a"]); assert.equal(comparison.conclusions[0]?.category, "matchingObservedMetadata"); assert.equal(comparison.samePrincipal, false);
+  const databaseChanges = await service.getDatabaseChanges(ownerView, { kind: "beginning" }); assert.equal(databaseChanges.data.changedZones.length, 1); assert.ok(databaseChanges.data.continuationHandle); assert.equal(databaseChanges.data.moreComing, false);
+  const zoneChanges = await service.getZoneChanges(ownerView, zone, { kind: "beginning" }); assert.equal(zoneChanges.data.changes[0]?.outcome, "present"); assert.ok(zoneChanges.data.continuationHandle); assert.equal(zoneChanges.data.moreComing, false);
+  const comparison = await service.compareViews(ownerView, participantView, zone, zone, ["record-a"]); assert.equal(comparison.conclusions[0]?.category, "matchingObservedMetadata"); assert.equal(comparison.samePrincipal, false);
 });
 
 function wireRecord(recordName: string) {

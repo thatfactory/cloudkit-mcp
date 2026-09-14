@@ -147,7 +147,7 @@ claude mcp add cloudkit -- \
 | `get_zone_changes` | Record changes and tombstones using process-bound cursors |
 | `compare_views` | Independent bounded comparison of two explicit authorized views |
 
-Shared-zone discovery and shared subscription listing remain capability-gated because the published API documentation does not establish them. A tool reports that limitation rather than interpreting it as an empty result.
+Generic shared `zones/list`/`zones/lookup` and shared subscription listing remain capability-gated because the published API documentation does not establish them. Shared-zone discovery instead uses the verified `changes/database` workflow. A tool reports an unverified limitation rather than interpreting it as an empty result.
 
 ## Example prompts
 
@@ -156,7 +156,7 @@ Shared-zone discovery and shared subscription listing remain capability-gated be
 - “Inspect the selected zone's share topology without returning participant identities or share URLs.”
 - “Read zone changes from the beginning and explain exactly what bounded coverage the returned cursor provides.”
 
-The Web Services implementation deliberately rejects `currentBaseline` without an issued cursor because the reviewed public contract does not establish a non-scanning baseline operation. It also does not retry requests automatically; safe errors instead state whether a caller retry is eligible.
+Change tools use an explicit discriminated start: `{ "kind": "beginning" }` or `{ "kind": "cursor", "handle": "..." }`. The Web Services implementation does not advertise `currentBaseline` because the reviewed public contract does not establish a distinct non-scanning baseline operation. It also does not retry requests automatically; safe errors instead state whether a caller retry is eligible.
 
 ## Local development
 

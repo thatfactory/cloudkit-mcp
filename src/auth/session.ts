@@ -2,6 +2,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { CloudKitMCPError, safeError } from "../errors.js";
 import type { DatabaseScope, Profile, ResolvedView } from "../domain/types.js";
 import { CloudKitTransport } from "../api/transport.js";
+import { preflightOperation } from "../api/operations.js";
 import { CredentialStore, type StoredCredential } from "./credential-store.js";
 
 /** Resolves credentials lazily and commits rotating user tokens before releasing a slot lease. */
@@ -15,6 +16,7 @@ export class SessionManager {
     if (!profile.allowedScopes.includes(scope)) {
       throw safeError({ code: "disallowedScope", message: "The selected profile does not authorize this database scope.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Choose an allowed scope returned by get_context." });
     }
+    preflightOperation(operation, profile.authenticationMode, scope);
     const outcome = await this.store.withLease(profile.credentialRef, async (stored) => {
       validateCredentialClass(profile, stored);
       const credential = stored.class === "web-user"
@@ -86,7 +88,7 @@ export class SessionManager {
     const principalEpoch = credential.class === "web-user" ? credential.principalEpoch : `credential-generation-${credential.generation}`;
     const principalInput = credential.class === "web-user" && credential.principalRecordName ? credential.principalRecordName : `${profile.credentialRef}:${principalEpoch}`;
     const principalAlias = createHmac("sha256", this.#aliasSecret).update(`${profile.containerId}\0${principalInput}`).digest("base64url").slice(0, 20);
-    return { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope, backend: profile.backend, principalAlias: `account_${principalAlias}`, principalEpoch, principalBound: credential.class !== "web-user" || credential.principalRecordName !== undefined };
+    return { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope, backend: profile.backend, principalAlias: `account_${principalAlias}`, principalEpoch, principalBound: credential.class !== "web-user" || credential.principalRecordName !== undefined && credential.uncertain !== true };
   }
 
   /** Produces a process-local keyed alias for a provider identity. */

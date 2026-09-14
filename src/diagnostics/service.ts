@@ -8,6 +8,7 @@ import { HandleRegistry, type HandleContext } from "../state/handles.js";
 import { compareObservations } from "./comparison.js";
 import { projectRecord, selectorDigest, type WireRecord } from "./projection.js";
 import { writeDiagnosticEvent } from "../observability/events.js";
+import { preflightOperation, type OperationId } from "../api/operations.js";
 
 /** Explicit view input shared by remote diagnostic tools. */
 export interface ViewInput { readonly profileId: string; readonly scope: DatabaseScope }
@@ -25,8 +26,10 @@ export type QueryValue = QueryScalar | { readonly kind: "list"; readonly values:
 
 /** Small typed filter supported by query_records. */
 export interface QueryFilter { readonly fieldName: string; readonly comparator: "EQUALS" | "NOT_EQUALS" | "LESS_THAN" | "LESS_THAN_OR_EQUALS" | "GREATER_THAN" | "GREATER_THAN_OR_EQUALS" | "IN"; readonly fieldValue: QueryValue }
+export type ChangeStart = { readonly kind: "beginning" } | { readonly kind: "cursor"; readonly handle: string };
 
 interface QueryCursor { readonly marker: string; readonly seenMarkerDigests: readonly string[] }
+interface ChangeCursor { readonly token: string; readonly traversalTokenDigests: readonly string[] }
 
 /** Implements the account-relative read-only diagnostic surface. */
 export class DiagnosticService {
@@ -78,10 +81,10 @@ export class DiagnosticService {
   /** Lists owner-aware zones without publishing raw names unless policy permits it. */
   async listZones(view: ViewInput) {
     return this.#remote("listZones", view, {}, (body, profile, context) => {
-      const zones = boundedArray(asObject(body).zones, 100);
-      return zones.map((item) => {
-        const zone = parseZone(item);
-        const handle = this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: zone.ownerRecordName, zoneName: zone.zoneName }, zone);
+      const zones = boundedArray(asObject(body).zones, 100).map(parseZone);
+      const handles = this.handles.issueBoundBatch("zone", zones.map((zone) => ({ context: { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: zone.ownerRecordName, zoneName: zone.zoneName }, value: zone })));
+      return zones.map((zone, index) => {
+        const handle = handles[index]!;
         return { handle, ...(profile.recordPolicy.discloseZoneNames ? { zoneName: zone.zoneName } : {}), ownerAlias: this.sessions.alias("owner", profile.containerId, zone.ownerRecordName) };
       });
     });
@@ -90,6 +93,7 @@ export class DiagnosticService {
   /** Fetches one exact owner-aware zone. */
   async getZone(view: ViewInput, zoneInput: ZoneInput) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "lookupZones");
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     return this.#remote("lookupZones", view, { zones: [zone] }, (body, profile, context) => {
       const item = boundedArray(asObject(body).zones, 1)[0];
@@ -115,11 +119,12 @@ export class DiagnosticService {
   /** Runs one bounded indexed query with no arbitrary predicate body. */
   async queryRecords(view: ViewInput, zoneInput: ZoneInput, recordType: string, filters: readonly QueryFilter[], limit: number, continuationHandle?: string) {
     const profile = this.#profile(view);
-    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
+    this.#preflight(profile, view.scope, "queryRecords");
     if (!profile.recordPolicy.allowedTypes.includes(recordType)) throw invalidInput("The requested record type is not authorized by startup policy.");
     if (filters.length > 10 || filters.some((filter) => !boundedIdentifier(filter.fieldName, 255) || !profile.recordPolicy.queryableFields.includes(filter.fieldName))) throw invalidInput("A query filter is not authorized by startup policy.");
     for (const filter of filters) validateQueryFilter(filter);
     const normalizedLimit = requireLimit(limit);
+    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const digest = selectorDigest({ recordType, filters, zone, limit: normalizedLimit, desiredKeys: [] });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "queryRecords", digest, zone);
     const cursor = continuationHandle ? this.handles.resolve<QueryCursor>(continuationHandle, context) : undefined;
@@ -139,103 +144,182 @@ export class DiagnosticService {
   /** Projects share topology attached to a proven record without returning share URLs or participant identities. */
   async getShare(view: ViewInput, zoneInput: ZoneInput, recordName: string) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "lookupRecords");
+    if (!boundedIdentifier(recordName, 1024)) throw invalidInput("The record name is invalid.");
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
-    const referenceResult = await this.sessions.execute(profile, view.scope, "lookupRecords", { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true });
-    const record = asObject(boundedArray(asObject(referenceResult.body).records, 1)[0]);
+    const referenceResult = await this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true }, (body) => exactLookupItem(body, recordName));
+    const record = referenceResult.data;
+    if (!record) return { ...referenceResult, status: "unavailable" as const, completeness: "notEstablished" as const, limitations: ["The exact selected record was omitted from the provider response."], data: { outcome: "unknown" as const } };
     const referenceError = boundedString(record.serverErrorCode, 128);
     if (referenceError) {
-      return { status: "unavailable", execution: "completed", remoteDataEffect: "none" as const, sessionEffect: referenceResult.replacementWebAuthenticationToken ? "rotated" as const : "unchanged" as const, completeness: "completeForRequest" as const, context: { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: view.scope, backend: profile.backend }, observedAt: this.now().toISOString(), limitations: ["The selected record lookup returned a per-item provider error."], data: { outcome: classifyProviderOutcome(referenceError) } };
+      return { ...referenceResult, status: "unavailable" as const, limitations: ["The selected record lookup returned a per-item provider error."], data: { outcome: classifyProviderOutcome(referenceError) } };
     }
     const shareReference = asObject(record.share);
     const shareRecordName = boundedString(shareReference.recordName, 1024);
     if (!shareRecordName) {
-      return { status: "unavailable", execution: "completed", remoteDataEffect: "none" as const, sessionEffect: referenceResult.replacementWebAuthenticationToken ? "rotated" as const : "unchanged" as const, completeness: "notEstablished" as const, context: { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: view.scope, backend: profile.backend }, observedAt: this.now().toISOString(), limitations: ["The selected record did not expose a proven share-record reference in this view."], data: { outcome: "unavailable" } };
+      return { ...referenceResult, status: "unavailable" as const, completeness: "notEstablished" as const, limitations: ["The selected record did not expose a proven share-record reference in this view."], data: { outcome: "unavailable" } };
     }
-    return this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName: shareRecordName }], desiredKeys: [], numbersAsStrings: true }, (body) => {
-      const share = asObject(boundedArray(asObject(body).records, 1)[0]);
-      const shareError = boundedString(share.serverErrorCode, 128);
-      if (shareError) return { outcome: classifyProviderOutcome(shareError), limitations: ["The share-record lookup returned a per-item provider error."] };
-      const fields = asObject(share.fields);
-      const currentParticipant = asObject(fieldValue(fields.currentUserParticipant) ?? share.currentUserParticipant);
-      const participantsValue = fieldValue(fields.participants) ?? share.participants;
-      const participants = boundedArray(participantsValue, 100);
-      return {
-        outcome: Object.keys(share).length ? "present" : "unavailable",
-        mode: normalizeShareEnum(fieldValue(fields.shareType) ?? share.shareType),
-        callerRole: normalizeShareEnum(currentParticipant.type ?? fieldValue(fields.currentUserParticipantRole) ?? share.currentUserParticipantRole),
-        publicPermission: normalizeShareEnum(fieldValue(fields.publicPermission) ?? share.publicPermission),
-        participants: participants.map((item) => {
-          const participant = asObject(item);
-          return { role: normalizeShareEnum(participant.type ?? participant.role), acceptanceStatus: normalizeShareEnum(participant.acceptanceStatus), permission: normalizeShareEnum(participant.permission) };
-        }),
-        limitations: ["Participant identities and share URLs are intentionally omitted."],
-      };
-    });
+    try {
+      const shareResult = await this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName: shareRecordName }], desiredKeys: [], numbersAsStrings: true }, (body) => {
+        const share = exactLookupItem(body, shareRecordName);
+        if (!share) return { outcome: "notFoundInView", limitations: ["The exact referenced share record was not returned in this view."] };
+        const shareError = boundedString(share.serverErrorCode, 128);
+        if (shareError) return { outcome: classifyProviderOutcome(shareError), limitations: ["The share-record lookup returned a per-item provider error."] };
+        const fields = asObject(share.fields);
+        const currentParticipant = asObject(fieldValue(fields.currentUserParticipant) ?? share.currentUserParticipant);
+        const participantsValue = fieldValue(fields.participants) ?? share.participants;
+        const participants = participantsValue === undefined ? [] : requireArray({ participants: participantsValue }, "participants", 100);
+        return {
+          outcome: Object.keys(share).length ? "present" : "unavailable",
+          mode: normalizeShareEnum(fieldValue(fields.shareType) ?? share.shareType),
+          callerRole: normalizeShareEnum(currentParticipant.type ?? fieldValue(fields.currentUserParticipantRole) ?? share.currentUserParticipantRole),
+          publicPermission: normalizeShareEnum(fieldValue(fields.publicPermission) ?? share.publicPermission),
+          participants: participants.map((item) => {
+            const participant = asObject(item);
+            return { role: normalizeShareEnum(participant.type ?? participant.role), acceptanceStatus: normalizeShareEnum(participant.acceptanceStatus), permission: normalizeShareEnum(participant.permission) };
+          }),
+          limitations: ["Participant identities and share URLs are intentionally omitted."],
+        };
+      });
+      const combined = { ...shareResult, sessionEffect: combineSessionEffects(referenceResult.sessionEffect, shareResult.sessionEffect) };
+      return shareResult.data.outcome === "present" ? combined : { ...combined, status: "unavailable" as const, completeness: "notEstablished" as const };
+    } catch (error) {
+      if (referenceResult.sessionEffect === "rotated" && error instanceof CloudKitMCPError && error.details.sessionEffect === "unchanged") throw new CloudKitMCPError({ ...error.details, sessionEffect: "rotated" });
+      throw error;
+    }
   }
 
   /** Lists only safe structural subscription metadata for documented scopes. */
   async listSubscriptions(view: ViewInput) {
-    return this.#remote("listSubscriptions", view, {}, (body) => ({ subscriptions: boundedArray(asObject(body).subscriptions, 100).map((item) => { const subscription = asObject(item); return { type: normalizeEnum(subscription.subscriptionType, ["query", "zone", "database"]), zonePresent: subscription.zoneID !== undefined, predicatePresent: subscription.query !== undefined }; }) }));
+    const result = await this.#remote("listSubscriptions", view, {}, (body) => {
+      const entries = requireArray(asObject(body), "subscriptions", 100);
+      const failures = entries.filter((item) => boundedString(asObject(item).serverErrorCode, 128));
+      const subscriptions = entries.filter((item) => !boundedString(asObject(item).serverErrorCode, 128)).map((item) => { const subscription = asObject(item); return { type: normalizeEnum(subscription.subscriptionType, ["query", "zone", "database"]), zonePresent: Object.keys(asObject(subscription.zoneID)).length > 0, predicatePresent: Object.keys(asObject(subscription.query)).length > 0 }; });
+      return { subscriptions, errors: failures.map((item) => ({ outcome: classifyProviderOutcome(boundedString(asObject(item).serverErrorCode, 128)) })) };
+    });
+    return result.data.errors.length > 0 ? { ...result, status: "partial" as const, completeness: "partial" as const, limitations: ["Provider-visible subscription metadata does not establish client registration or notification delivery."] } : { ...result, limitations: ["Provider-visible subscription metadata does not establish client registration or notification delivery."] };
   }
 
   /** Reads database change state using a process-bound continuation handle. */
-  async getDatabaseChanges(view: ViewInput, start: "currentBaseline" | "beginning", continuationHandle?: string) {
-    if (start === "currentBaseline" && continuationHandle === undefined) {
-      throw invalidInput("A verified current-baseline operation is not available for the selected backend; use beginning for an explicit bounded scan.");
-    }
+  async getDatabaseChanges(view: ViewInput, start: ChangeStart, signal?: AbortSignal) {
     const profile = this.#profile(view);
-    const digest = selectorDigest({ start });
+    this.#preflight(profile, view.scope, "getDatabaseChanges");
+    const digest = selectorDigest({ operation: "getDatabaseChanges", resultsLimit: 50 });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "getDatabaseChanges", digest);
-    const token = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
-    return this.#remote("getDatabaseChanges", view, token ? { syncToken: token } : {}, (body) => {
+    const cursor = start.kind === "cursor" ? this.handles.resolve<ChangeCursor>(start.handle, context) : undefined;
+    const result = await this.#remote("getDatabaseChanges", view, { resultsLimit: 50, ...(cursor ? { syncToken: cursor.token } : {}) }, (body) => {
       const object = asObject(body);
-      const next = boundedString(object.syncToken, 8192); const moreComing = object.moreComing === true;
-      if (moreComing && (!next || next === token)) throw malformedContinuation();
-      const entries = boundedArray(object.zones, 100);
-      const errors = entries.filter((item) => boundedString(asObject(item).serverErrorCode, 128)).map((item) => ({ outcome: classifyProviderOutcome(boundedString(asObject(item).serverErrorCode, 128)) }));
-      const changedZones = entries.filter((item) => !boundedString(asObject(item).serverErrorCode, 128)).map((item) => { const changedZone = parseZone(item); return { handle: this.handles.issue("zone", { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: changedZone.ownerRecordName, zoneName: changedZone.zoneName }, changedZone), deleted: asObject(item).deleted === true }; });
-      return { changedZones, errors, coverage: token ? "sinceIssuedCursor" : start, moreComing, continuationHandle: next ? this.handles.issue("databaseCursor", context, next) : undefined };
-    });
+      const next = requiredContinuation(object, "syncToken"); const moreComing = requiredBoolean(object, "moreComing");
+      const nextDigest = next ? selectorDigest(next) : undefined;
+      if (moreComing && (!nextDigest || cursor?.traversalTokenDigests.includes(nextDigest))) throw malformedContinuation();
+      const entries = requireArray(object, "zones", 100);
+      const failures = entries.filter((item) => boundedString(asObject(item).serverErrorCode, 128)).map((item) => ({ item: asObject(item), zone: parseZone(item) }));
+      const errors = failures.map(({ item, zone }) => ({ zoneHandle: this.handles.issueObservation("zone-error", { ...context, operation: "zone-error", selectorDigest: "changed-zone-error", zoneOwner: zone.ownerRecordName, zoneName: zone.zoneName }), outcome: classifyProviderOutcome(boundedString(item.serverErrorCode, 128)) }));
+      const successful = entries.filter((item) => !boundedString(asObject(item).serverErrorCode, 128)).map((item) => ({ zone: parseZone(item), deleted: asObject(item).deleted === true }));
+      const zoneKeys = successful.map((item) => selectorDigest(item.zone));
+      if (new Set(zoneKeys).size !== zoneKeys.length) throw malformedRecordCollection();
+      const traversalTokenDigests = nextDigest ? moreComing ? [...(cursor?.traversalTokenDigests ?? []), nextDigest].slice(-16) : [nextDigest] : [];
+      const issued = this.handles.issueBoundBatch<ZoneIdentity | ChangeCursor>("change", [
+        ...successful.map((item) => ({ context: { ...context, operation: "zone", selectorDigest: "discovered-zone", zoneOwner: item.zone.ownerRecordName, zoneName: item.zone.zoneName }, value: item.zone })),
+        { context, value: { token: next, traversalTokenDigests } },
+      ]);
+      const zoneHandles = issued.slice(0, successful.length);
+      const changedZones = successful.map((item, index) => ({ handle: zoneHandles[index]!, deleted: item.deleted }));
+      return { changedZones, errors, coverage: cursor ? "sinceIssuedCursor" : "beginning", moreComing, continuationHandle: issued[successful.length] };
+    }, signal);
+    return result.data.errors.length > 0 ? { ...result, status: "partial" as const, completeness: "partial" as const } : result;
   }
 
   /** Reads custom-zone record changes and tombstones using a context-bound handle. */
-  async getZoneChanges(view: ViewInput, zoneInput: ZoneInput, start: "currentBaseline" | "beginning", continuationHandle?: string) {
-    if (start === "currentBaseline" && continuationHandle === undefined) {
-      throw invalidInput("A verified current-baseline operation is not available for the selected backend; use beginning for an explicit bounded scan.");
-    }
+  async getZoneChanges(view: ViewInput, zoneInput: ZoneInput, start: ChangeStart, signal?: AbortSignal) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "getZoneChanges");
+    if (zoneInput.zoneName === "_defaultZone") throw unsupportedDefaultZoneChanges();
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
-    const digest = selectorDigest({ start, zone, desiredKeys: [] });
+    if (zone.zoneName === "_defaultZone") throw unsupportedDefaultZoneChanges();
+    const digest = selectorDigest({ operation: "getZoneChanges", zone, desiredKeys: [], resultsLimit: 50 });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "getZoneChanges", digest, zone);
-    const token = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
-    return this.#remote("getZoneChanges", view, { zones: [{ zoneID: zone, ...(token ? { syncToken: token } : {}), desiredKeys: [] }] }, (body, selectedProfile) => {
-      const zoneResult = asObject(boundedArray(asObject(body).zones, 1)[0]);
+    const cursor = start.kind === "cursor" ? this.handles.resolve<ChangeCursor>(start.handle, context) : undefined;
+    const result = await this.#remote("getZoneChanges", view, { zones: [{ zoneID: zone, ...(cursor ? { syncToken: cursor.token } : {}), desiredKeys: [], numberAsStrings: true, resultsLimit: 50 }] }, (body, selectedProfile) => {
+      const zoneResult = asObject(requireArray(asObject(body), "zones", 1)[0]);
+      if (Object.keys(zoneResult).length === 0) throw malformedShape();
       const zoneError = boundedString(zoneResult.serverErrorCode, 128);
-      if (zoneError) return { changes: [], errors: [{ outcome: classifyProviderOutcome(zoneError) }], coverage: token ? "sinceIssuedCursor" : start };
-      const next = boundedString(zoneResult.syncToken, 8192);
-      const moreComing = zoneResult.moreComing === true;
-      if (moreComing && (!next || next === token)) throw malformedContinuation();
-      return { changes: boundedArray(zoneResult.records, 100).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest })), errors: [], coverage: token ? "sinceIssuedCursor" : start, moreComing, continuationHandle: next ? this.handles.issue("zoneCursor", context, next) : undefined };
-    });
+      if (zoneError) {
+        const errorZone = parseZone(zoneResult);
+        if (errorZone.zoneName !== zone.zoneName || errorZone.ownerRecordName !== zone.ownerRecordName) throw malformedRecordCollection();
+        return {
+          changes: [],
+          errors: [{ zoneHandle: this.handles.issueObservation("zone-error", { ...context, operation: "zone-error", selectorDigest: "zone-change-error" }), outcome: classifyProviderOutcome(zoneError) }],
+          coverage: cursor ? "sinceIssuedCursor" : "beginning",
+          completion: "notEstablished" as const,
+          stopReason: "zoneError" as const,
+          continuationAvailable: cursor !== undefined,
+          ...(start.kind === "cursor" ? { continuationHandle: start.handle } : {}),
+        };
+      }
+      const observedZone = parseZone(zoneResult);
+      if (observedZone.zoneName !== zone.zoneName || observedZone.ownerRecordName !== zone.ownerRecordName) throw malformedRecordCollection();
+      const next = requiredContinuation(zoneResult, "syncToken");
+      const moreComing = requiredBoolean(zoneResult, "moreComing");
+      const nextDigest = next ? selectorDigest(next) : undefined;
+      if (moreComing && (!nextDigest || cursor?.traversalTokenDigests.includes(nextDigest))) throw malformedContinuation();
+      const traversalTokenDigests = nextDigest ? moreComing ? [...(cursor?.traversalTokenDigests ?? []), nextDigest].slice(-16) : [nextDigest] : [];
+      const changes = requireArray(zoneResult, "records", 50).map((item) => {
+        const record = asObject(item);
+        if (Object.keys(asObject(record.zoneID)).length > 0) {
+          const recordZone = parseZone(record.zoneID);
+          if (recordZone.zoneName !== zone.zoneName || recordZone.ownerRecordName !== zone.ownerRecordName) throw malformedRecordCollection();
+        }
+        return projectRecord(record as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest });
+      });
+      return { changes, errors: [], coverage: cursor ? "sinceIssuedCursor" : "beginning", moreComing, continuationHandle: this.handles.issue<ChangeCursor>("zoneCursor", context, { token: next, traversalTokenDigests }) };
+    }, signal);
+    return result.data.errors.length > 0 ? { ...result, status: "partial" as const, completeness: "partial" as const } : result;
   }
 
   /** Compares exact record lookups performed independently through two profiles. */
-  async compareViews(left: ViewInput, right: ViewInput, zone: ZoneInput, recordNames: readonly string[]) {
-    const [leftResult, rightResult] = await Promise.allSettled([this.getRecords(left, zone, recordNames), this.getRecords(right, zone, recordNames)]);
+  async compareViews(left: ViewInput, right: ViewInput, leftZoneInput: ZoneInput, rightZoneInput: ZoneInput, recordNames: readonly string[]) {
+    const leftProfile = this.#profile(left); const rightProfile = this.#profile(right);
+    this.#preflight(leftProfile, left.scope, "lookupRecords"); this.#preflight(rightProfile, right.scope, "lookupRecords");
+    if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
+    if (leftZoneInput.handle === undefined) requireExactZone(left.scope, leftZoneInput);
+    if (rightZoneInput.handle === undefined) requireExactZone(right.scope, rightZoneInput);
+    const [leftZone, rightZone, leftIdentityBefore, rightIdentityBefore] = await Promise.all([
+      this.#resolveZone(leftProfile, left.scope, leftZoneInput),
+      this.#resolveZone(rightProfile, right.scope, rightZoneInput),
+      this.sessions.currentView(leftProfile, left.scope),
+      this.sessions.currentView(rightProfile, right.scope),
+    ]);
+    const leftObservedFrom = this.now().toISOString();
+    const leftPromise = this.getRecords(left, leftZone, recordNames);
+    const rightObservedFrom = this.now().toISOString();
+    const rightPromise = this.getRecords(right, rightZone, recordNames);
+    const [leftResult, rightResult] = await Promise.allSettled([leftPromise, rightPromise]);
+    const leftObservedTo = this.now().toISOString();
+    const rightObservedTo = this.now().toISOString();
     const leftRecords = leftResult.status === "fulfilled" ? leftResult.value.data as readonly RecordObservation[] : [];
     const rightRecords = rightResult.status === "fulfilled" ? rightResult.value.data as readonly RecordObservation[] : [];
-    const leftProfile = this.#profile(left); const rightProfile = this.#profile(right);
     const [leftResolved, rightResolved] = await Promise.all([this.sessions.currentView(leftProfile, left.scope), this.sessions.currentView(rightProfile, right.scope)]);
     const keyed = (names: readonly string[], records: readonly RecordObservation[]): Readonly<Record<string, RecordObservation>> => Object.fromEntries(names.map((name, index) => [selectorDigest(name), records[index] ?? { handle: `missing_${index}`, outcome: "unknown" as const, deleted: "unknown" as const }]));
-    const mapping = leftResolved.principalBound && rightResolved.principalBound && leftResolved.containerId === rightResolved.containerId && leftResolved.environment === rightResolved.environment ? "verified" as const : "explicitUnverified" as const;
-    return { left: leftResult.status, right: rightResult.status, samePrincipal: leftResolved.principalAlias === rightResolved.principalAlias, conclusions: compareObservations({ view: leftResolved, observedFrom: this.now().toISOString(), observedTo: this.now().toISOString(), identityMapping: mapping, records: keyed(recordNames, leftRecords), limitations: leftResult.status === "rejected" ? ["Left view failed independently."] : [] }, { view: rightResolved, observedFrom: this.now().toISOString(), observedTo: this.now().toISOString(), identityMapping: mapping, records: keyed(recordNames, rightRecords), limitations: rightResult.status === "rejected" ? ["Right view failed independently."] : [] }) };
+    const identitiesStable = leftIdentityBefore.principalEpoch === leftResolved.principalEpoch && rightIdentityBefore.principalEpoch === rightResolved.principalEpoch;
+    const zonesCorrespond = leftZone.zoneName === rightZone.zoneName && leftZone.ownerRecordName === rightZone.ownerRecordName;
+    const mapping = identitiesStable && zonesCorrespond && leftResolved.principalBound && rightResolved.principalBound && leftResolved.containerId === rightResolved.containerId && leftResolved.environment === rightResolved.environment ? "verified" as const : "explicitUnverified" as const;
+    return {
+      left: comparisonSide(leftResult),
+      right: comparisonSide(rightResult),
+      samePrincipal: leftResolved.principalAlias === rightResolved.principalAlias,
+      identityMapping: mapping,
+      observationWindows: { left: { from: leftObservedFrom, to: leftObservedTo }, right: { from: rightObservedFrom, to: rightObservedTo } },
+      conclusions: compareObservations({ view: leftResolved, observedFrom: leftObservedFrom, observedTo: leftObservedTo, identityMapping: leftResult.status === "rejected" ? "unavailable" : mapping, records: keyed(recordNames, leftRecords), limitations: leftResult.status === "rejected" ? ["Left view failed independently."] : [] }, { view: rightResolved, observedFrom: rightObservedFrom, observedTo: rightObservedTo, identityMapping: rightResult.status === "rejected" ? "unavailable" : mapping, records: keyed(recordNames, rightRecords), limitations: rightResult.status === "rejected" ? ["Right view failed independently."] : [] }),
+    };
   }
 
   async #records(view: ViewInput, zoneInput: ZoneInput, recordNames: readonly string[], fields: readonly string[]): Promise<ResultEnvelope<readonly RecordObservation[]>> {
     if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
     const profile = this.#profile(view);
-    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
+    this.#preflight(profile, view.scope, "lookupRecords");
     if (fields.some((field) => !profile.recordPolicy.readablePayloadFields.includes(field))) throw invalidInput("A requested payload field is not authorized by startup policy.");
+    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const digest = selectorDigest({ zone, recordNames, fields });
     const handleContext = this.#handleContext(await this.sessions.currentView(profile, view.scope), "lookupRecords", digest, zone);
     return this.#remote("lookupRecords", view, { zoneID: zone, records: recordNames.map((recordName) => ({ recordName })), desiredKeys: fields, numbersAsStrings: true }, (body, selectedProfile) => {
@@ -255,10 +339,10 @@ export class DiagnosticService {
     });
   }
 
-  async #remote<T>(operation: Parameters<SessionManager["execute"]>[2], view: ViewInput, body: unknown, project: (body: unknown, profile: Profile, context: HandleContext) => T): Promise<ResultEnvelope<T>> {
+  async #remote<T>(operation: Parameters<SessionManager["execute"]>[2], view: ViewInput, body: unknown, project: (body: unknown, profile: Profile, context: HandleContext) => T, signal?: AbortSignal): Promise<ResultEnvelope<T>> {
     const started = Date.now(); const requestId = randomUUID(); const profile = this.#profile(view);
     try {
-      const result = await this.sessions.execute(profile, view.scope, operation, body);
+      const result = await this.sessions.execute(profile, view.scope, operation, body, signal);
       const providerCode = boundedString(asObject(result.body).serverErrorCode, 128);
       const expectedPublicChallenge = operation === "probeCurrentUser" && profile.authenticationMode === "api-token-public" && providerCode === "AUTHENTICATION_REQUIRED";
       if (providerCode && !expectedPublicChallenge) throw providerError(providerCode, result.replacementWebAuthenticationToken !== undefined);
@@ -285,6 +369,10 @@ export class DiagnosticService {
     const profile = requireProfile(this.profiles, view.profileId);
     if (!profile.allowedScopes.includes(view.scope)) throw invalidInput("The selected profile does not authorize this database scope.");
     return profile;
+  }
+
+  #preflight(profile: Profile, scope: DatabaseScope, operation: OperationId): void {
+    preflightOperation(operation, profile.authenticationMode, scope);
   }
 
   async #resolveZone(profile: Profile, scope: DatabaseScope, input: ZoneInput): Promise<ZoneIdentity> {
@@ -333,12 +421,23 @@ function invalidInput(message: string) { return safeError({ code: "invalidInput"
 function malformedContinuation() { return safeError({ code: "malformedResponse", message: "CloudKit repeated the active continuation marker.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Stop traversal and inspect provider compatibility before continuing." }); }
 function malformedShape() { return safeError({ code: "malformedResponse", message: "CloudKit returned a response with a missing or invalid required collection.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Inspect provider compatibility using privacy-safe contract diagnostics." }); }
 function malformedRecordCollection() { return safeError({ code: "malformedResponse", message: "CloudKit returned contradictory or unbound record identities.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Stop comparison and inspect provider compatibility using privacy-safe contract diagnostics." }); }
+function unsupportedDefaultZoneChanges() { return safeError({ code: "unsupportedCapability", message: "Zone-change diagnostics require an explicit custom record zone.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Select a discovered custom zone or use database-change diagnostics." }); }
 
 function optionalContinuation(object: Record<string, unknown>, key: string): string | undefined {
   if (!(key in object) || object[key] === null) return undefined;
   const marker = boundedString(object[key], 8192);
   if (!marker) throw malformedContinuation();
   return marker;
+}
+function requiredContinuation(object: Record<string, unknown>, key: string): string { const value = optionalContinuation(object, key); if (!value) throw malformedContinuation(); return value; }
+function requiredBoolean(object: Record<string, unknown>, key: string): boolean { if (typeof object[key] !== "boolean") throw malformedShape(); return object[key]; }
+
+function exactLookupItem(body: unknown, expectedRecordName: string): Record<string, unknown> | undefined {
+  const records = requireArray(asObject(body), "records", 1);
+  if (records.length === 0) return undefined;
+  const record = asObject(records[0]);
+  if (boundedString(record.recordName, 1024) !== expectedRecordName) throw malformedRecordCollection();
+  return record;
 }
 
 function validateQueryFilter(filter: QueryFilter): void {
@@ -383,3 +482,5 @@ function providerError(code: string, rotated: boolean) {
   if (code === "THROTTLED") return safeError({ code: "rateLimited", message: "CloudKit rate-limited the read.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Retry only after provider guidance and within a fresh diagnostic deadline." });
   return safeError({ code: "partialFailure", message: "CloudKit returned a provider failure without safe detail disclosure.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Inspect privacy-safe status diagnostics and narrow the operation." });
 }
+function combineSessionEffects(left: import("../domain/types.js").SessionEffect, right: import("../domain/types.js").SessionEffect) { if (left === "uncertain" || right === "uncertain") return "uncertain" as const; if (left === "rotated" || right === "rotated") return "rotated" as const; return "unchanged" as const; }
+function comparisonSide(result: PromiseSettledResult<unknown>) { return result.status === "fulfilled" ? { status: "fulfilled" as const } : { status: "rejected" as const, errorCode: result.reason instanceof CloudKitMCPError ? result.reason.details.code : "partialFailure" as const }; }
