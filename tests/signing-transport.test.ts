@@ -4,6 +4,9 @@ import test from "node:test";
 import { CloudKitTransport } from "../src/api/transport.js";
 import { cloudKitTimestamp, serverKeySignatureInput, signServerKeyRequest } from "../src/api/signing.js";
 
+const publicContext = { containerId: "iCloud.com.example", environment: "development" as const, scope: "public" as const };
+const publicCredential = { mode: "api-token-public" as const, apiToken: "token" };
+
 test("server-key signature verifies against exact body path and date", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const credential = { keyId: "key-id", privateKeyPem: privateKey.export({ format: "pem", type: "pkcs8" }).toString() };
@@ -95,4 +98,154 @@ test("global transport concurrency never exceeds four active requests", async ()
   while (active > 0 || releases.length === 0) { if (active === 0) break; await new Promise((resolvePromise) => setImmediate(resolvePromise)); while (releases.length) releases.shift()?.(); }
   await Promise.all(requests);
   assert.equal(maximum, 4);
+});
+
+test("HTTP failures map to stable safe errors without provider text", async () => {
+  for (const [status, code] of [[401, "authenticationExpired"], [403, "permissionDenied"], [429, "rateLimited"], [503, "partialFailure"]] as const) {
+    const transport = new CloudKitTransport(async () => new Response(JSON.stringify({ reason: "token=private-provider-detail" }), { status }));
+    const result = await transport.execute("lookupRecords", publicContext, publicCredential, {});
+    assert.equal(result.error?.code, code);
+    assert.equal(result.error?.retryable, false);
+    assert.equal(JSON.stringify(result.error).includes("private-provider-detail"), false);
+  }
+});
+
+test("rotating-session HTTP errors distinguish committed replacement from uncertainty", async () => {
+  const context = { ...publicContext, scope: "private" as const };
+  const credential = { mode: "web-user" as const, apiToken: "api", webAuthenticationToken: "session" };
+  const withoutReplacement = await new CloudKitTransport(async () => new Response("{}", { status: 401 })).execute("lookupRecords", context, credential, {});
+  assert.equal(withoutReplacement.error?.sessionEffect, "uncertain");
+  const withReplacement = await new CloudKitTransport(async () => new Response("{}", { status: 401, headers: { "x-apple-cloudkit-web-auth-token": "replacement" } })).execute("lookupRecords", context, credential, {});
+  assert.equal(withReplacement.error?.sessionEffect, "unchanged");
+  assert.equal(withReplacement.replacementWebAuthenticationToken, "replacement");
+});
+
+test("malformed UTF-8 and JSON responses fail with stable diagnostics", async () => {
+  const invalidResponses = [new Response(new Uint8Array([0xff])), new Response("{not-json")];
+  for (const response of invalidResponses) {
+    const transport = new CloudKitTransport(async () => response);
+    await assert.rejects(transport.execute("lookupRecords", publicContext, publicCredential, {}), (error: unknown) => {
+      assert.equal((error as { details?: { code?: string; sessionEffect?: string } }).details?.code, "malformedResponse");
+      assert.equal((error as { details?: { sessionEffect?: string } }).details?.sessionEffect, "unchanged");
+      return true;
+    });
+  }
+});
+
+test("body-read timeout cancels a stalled stream with a safe timeout", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({ cancel: () => { cancelled = true; } });
+  const transport = new CloudKitTransport(async () => new Response(stream), undefined, 10);
+  await assert.rejects(transport.execute("lookupRecords", publicContext, publicCredential, {}), (error: unknown) => {
+    assert.equal((error as { details?: { code?: string } }).details?.code, "timeout");
+    return true;
+  });
+  assert.equal(cancelled, true);
+});
+
+test("queued cancellation never dispatches the cancelled request", async () => {
+  const releases: Array<() => void> = [];
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => {
+    calls += 1;
+    await new Promise<void>((resolvePromise) => releases.push(resolvePromise));
+    return new Response("{}");
+  });
+  const active = Array.from({ length: 4 }, () => transport.execute("lookupRecords", publicContext, publicCredential, {}));
+  while (calls < 4) await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  const controller = new AbortController();
+  const queued = transport.execute("lookupRecords", publicContext, publicCredential, {}, controller.signal);
+  controller.abort();
+  await assert.rejects(queued, (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "cancelled");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  assert.equal(calls, 4);
+  while (releases.length) releases.shift()?.();
+  await Promise.all(active);
+});
+
+test("immediate cancellation cannot race an available permit into dispatch", async () => {
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => { calls += 1; return new Response("{}"); });
+  const controller = new AbortController();
+  const request = transport.execute("lookupRecords", publicContext, publicCredential, {}, controller.signal);
+  controller.abort();
+  await assert.rejects(request, (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "cancelled");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  assert.equal(calls, 0);
+});
+
+test("cancellation after dequeue cannot race a granted permit into dispatch", async () => {
+  const releases: Array<() => void> = [];
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => {
+    calls += 1;
+    await new Promise<void>((resolvePromise) => releases.push(resolvePromise));
+    return new Response("{}");
+  });
+  const active = Array.from({ length: 4 }, () => transport.execute("lookupRecords", publicContext, publicCredential, {}));
+  while (calls < 4) await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  const controller = new AbortController();
+  const queued = transport.execute("lookupRecords", publicContext, publicCredential, {}, controller.signal);
+  releases.shift()?.();
+  controller.abort();
+  await assert.rejects(queued, (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "cancelled");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  assert.equal(calls, 4);
+  while (releases.length) releases.shift()?.();
+  await Promise.all(active);
+});
+
+test("bounded queue rejects overflow before dispatch", async () => {
+  const releases: Array<() => void> = [];
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => {
+    calls += 1;
+    await new Promise<void>((resolvePromise) => releases.push(resolvePromise));
+    return new Response("{}");
+  });
+  const accepted = Array.from({ length: 36 }, () => transport.execute("lookupRecords", publicContext, publicCredential, {}));
+  await assert.rejects(transport.execute("lookupRecords", publicContext, publicCredential, {}), (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "queueExhausted");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  while (calls < 4) await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  while (calls < 36 || releases.length > 0) {
+    while (releases.length) releases.shift()?.();
+    await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  }
+  await Promise.all(accepted);
+  assert.equal(calls, 36);
+});
+
+test("transport failures are not automatically replayed", async () => {
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => { calls += 1; throw new Error("provider detail"); });
+  await assert.rejects(transport.execute("lookupRecords", publicContext, publicCredential, {}), (error: unknown) => {
+    assert.equal((error as { details?: { code?: string } }).details?.code, "timeout");
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test("server-key signing rejects invalid key material and unregistered paths safely", () => {
+  assert.throws(() => signServerKeyRequest({ keyId: "key", privateKeyPem: "not-a-key" }, new Uint8Array(), "/database/1/iCloud.com.example/development/public/zones/list", new Date()), /could not sign/);
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const credential = { keyId: "key", privateKeyPem: privateKey.export({ format: "pem", type: "pkcs8" }).toString() };
+  assert.throws(() => signServerKeyRequest(credential, new Uint8Array(), "https://evil.example/database/1/path", new Date()), /outside the CloudKit/);
+  for (const privateKeyPem of [
+    generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+    generateKeyPairSync("ec", { namedCurve: "secp384r1" }).privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+  ]) {
+    assert.throws(() => signServerKeyRequest({ keyId: "key", privateKeyPem }, new Uint8Array(), "/database/1/iCloud.com.example/development/public/zones/list", new Date()), /could not sign/);
+  }
 });

@@ -442,7 +442,7 @@ Work:
 - [x] Operation registry and bounded transport implemented.
 - [x] Deterministic server-key signing contract implemented and independently verified synthetically.
 - [x] Public API-token challenge and authenticated web-user probe/session-rotation contracts live-verified.
-- [ ] Complete deterministic transport/error adversarial coverage; provider error/retry variants remain live-unverified.
+- [x] Deterministic transport/error adversarial coverage complete; provider error/retry variants remain live-unverified and are not intentionally provoked during acceptance.
 - [ ] Live server-key signing remains unverified and is not required for the proven web-user MVP path.
 - [x] Automatic transport retries remain deliberately unavailable; safe errors expose bounded retry eligibility instead.
 
@@ -651,7 +651,7 @@ The final README must use the actual implemented CLI/schema and a released pinne
 
 **Exit gate:** all applicable MVP requirements have either demonstrated behavior or evidence-backed platform limitations; the core private/shared inventory workflow is proven; exact-head review and repository/release gates pass; the authorized package can be installed and discovered without credentials.
 
-- [ ] Deterministic transport/signing adversarial coverage complete.
+- [x] Deterministic transport/signing adversarial coverage complete.
 - [ ] Credential/session concurrency and recovery adversarial coverage complete.
 - [ ] Query, pagination, projection, change, sharing, subscription, and comparison adversarial coverage complete.
 - [ ] Privacy-safe release-candidate live acceptance complete for the configured profiles.

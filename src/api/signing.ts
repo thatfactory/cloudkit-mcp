@@ -46,6 +46,7 @@ export function signServerKeyRequest(
   try {
     const timestamp = cloudKitTimestamp(date);
     const key = createPrivateKey({ key: credential.privateKeyPem, format: "pem" });
+    if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") throw new Error("invalid CloudKit key type");
     const signature = sign("sha256", Buffer.from(serverKeySignatureInput(timestamp, body, pathAndQuery), "utf8"), {
       key,
       dsaEncoding: "der",
