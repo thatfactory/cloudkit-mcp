@@ -28,7 +28,10 @@
     "schemas:check": "node --import tsx scripts/generate-schemas.ts --check",
     "package:verify": "node scripts/verify-package.mjs",
     "smoke": "node scripts/pack-smoke.mjs",
-    "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke"
+    "release:preflight": "node --import tsx scripts/release-preflight.ts",
+    "release:artifact": "node --import tsx scripts/release-artifact.ts",
+    "release:offline": "node scripts/release-offline-smoke.mjs",
+    "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke && npm run release:offline"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

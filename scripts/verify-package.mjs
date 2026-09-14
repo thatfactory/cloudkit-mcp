@@ -1,9 +1,27 @@
 import { execFile } from "node:child_process";
+import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
-const { stdout } = await execute("npm", ["pack", "--json", "--dry-run", "--ignore-scripts"], { cwd: new URL("..", import.meta.url) });
-const report = JSON.parse(stdout)[0];
+const tarballIndex = process.argv.indexOf("--tarball");
+let report;
+let temporary;
+if (tarballIndex >= 0) {
+  const tarball = resolve(process.argv[tarballIndex + 1]); temporary = await mkdtemp(join(tmpdir(), "cloudkit-package-verify-"));
+  const { stdout } = await execute("tar", ["-tzf", tarball]);
+  const entries = stdout.trim().split("\n").filter(Boolean);
+  if (entries.some((path) => !path.startsWith("package/") || path.startsWith("/") || path.split("/").includes(".."))) throw new Error("unsafe package archive path");
+  try {
+    await execute("tar", ["-xzf", tarball, "-C", temporary]);
+    report = { files: entries.filter((path) => !path.endsWith("/")).map((path) => ({ path: path.replace(/^package\//, "") })) };
+    const packaged = JSON.parse(await readFile(join(temporary, "package", "package.json"), "utf8"));
+    if (packaged.name !== "@thatfactory/cloudkit-mcp" || typeof packaged.version !== "string") throw new Error("packaged identity mismatch");
+  } finally { await rm(temporary, { recursive: true, force: true }); temporary = undefined; }
+} else {
+  const { stdout } = await execute("npm", ["pack", "--json", "--dry-run", "--ignore-scripts"], { cwd: new URL("..", import.meta.url) }); report = JSON.parse(stdout)[0];
+}
 const allowedTopLevel = new Set(["dist", "resources", "package.json", "README.md", "LICENSE"]);
 for (const file of report.files) {
   const top = file.path.split("/")[0];

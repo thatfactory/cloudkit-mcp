@@ -160,6 +160,8 @@ Change tools use an explicit discriminated start: `{ "kind": "beginning" }` or `
 
 ## Local development
 
+Release-event identity and the final tarball byte-identity path are tested without credentials or publication. These checks do not authorize an npm release; a future authorized workflow publishes only the exact tarball it inspected and smoke-tested.
+
 ```sh
 npm ci
 npm run check

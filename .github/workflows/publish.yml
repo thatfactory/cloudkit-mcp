@@ -12,8 +12,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Resolve immutable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Resolve trusted release identity
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          case "$RELEASE_TAG" in ''|*[!0-9A-Za-z._-]*) exit 1 ;; esac
+          read -r OBJECT_SHA OBJECT_TYPE < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object | [.sha, .type] | @tsv')
+          if [ "$OBJECT_TYPE" = tag ]; then
+            read -r OBJECT_SHA OBJECT_TYPE < <(gh api "repos/$GITHUB_REPOSITORY/git/tags/$OBJECT_SHA" --jq '.object | [.sha, .type] | @tsv')
+          fi
+          test "$OBJECT_TYPE" = commit
+          test "$OBJECT_SHA" = "$GITHUB_SHA"
+          STATUS="$(gh api "repos/$GITHUB_REPOSITORY/compare/$OBJECT_SHA...main" --jq .status)"
+          test "$STATUS" = identical || test "$STATUS" = ahead
+          test "${{ github.event.release.draft }}" = false
+          test "${{ github.event.release.prerelease }}" = false
+          echo "sha=$OBJECT_SHA" >> "$GITHUB_OUTPUT"
+
   publish:
-    if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm-publish
@@ -23,23 +51,37 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ needs.preflight.outputs.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 24.20.0
           registry-url: https://registry.npmjs.org
           cache: npm
-      - name: Verify immutable release identity
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          test "$RELEASE_TAG" = "$(node -p \"require('./package.json').version\")"
-          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
-          git merge-base --is-ancestor HEAD origin/main
       - run: npm ci
       - run: npm run check
       - name: Verify supported npm trusted-publishing client
         run: |
           node -e "const { execFileSync } = require('node:child_process'); const [major, minor] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number); if (major < 11 || (major === 11 && minor < 5)) process.exit(1)"
-      - run: npm publish --access public --provenance
+      - name: Create one authoritative release artifact
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          npm run clean
+          npm run build
+          node --import tsx scripts/release-artifact.ts create --destination "$RUNNER_TEMP/cloudkit-release" --tag "$RELEASE_TAG" --source-sha "$GITHUB_SHA"
+      - name: Inspect and smoke the exact artifact
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          TARBALL="$RUNNER_TEMP/cloudkit-release/$(node -p "require('$RUNNER_TEMP/cloudkit-release/release-artifact.json').filename")"
+          node scripts/verify-package.mjs --tarball "$TARBALL"
+          node scripts/pack-smoke.mjs --tarball "$TARBALL"
+          node --import tsx scripts/release-artifact.ts verify --destination "$RUNNER_TEMP/cloudkit-release" --tag "$RELEASE_TAG" --source-sha "$GITHUB_SHA"
+      - name: Publish the inspected artifact
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          TARBALL="$RUNNER_TEMP/cloudkit-release/$(node -p "require('$RUNNER_TEMP/cloudkit-release/release-artifact.json').filename")"
+          node --import tsx scripts/release-artifact.ts verify --destination "$RUNNER_TEMP/cloudkit-release" --tag "$RELEASE_TAG" --source-sha "$GITHUB_SHA"
+          npm publish "$TARBALL" --access public --provenance --ignore-scripts
