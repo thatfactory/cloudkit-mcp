@@ -382,7 +382,7 @@ Work:
 - [x] Reference and governance versions recorded.
 - [x] Capability matrix and provenance baseline completed.
 - [x] Authenticated-user backend architecture selected from primary evidence.
-- [ ] Ordinary owner/participant private-to-shared workflow live-verified.
+- [x] Ordinary owner/participant private-to-shared workflow live-verified.
 
 ### Phase 01 - Repository, npm package, and MCP skeleton
 
@@ -716,7 +716,7 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Zone-wide share discovery/mode | `get_share` returned the explicit `unavailable` outcome from both owner and participant views for the canonical inventory record | Treat share mode/role as unavailable through this backend unless a later live contract proves otherwise |
 | Native database subscriptions through selected API | Owner/private `GET subscriptions/list` returned one database subscription; shared subscription listing remains outside the documented enabled scopes | Retain the owner/private contract and its precise shared-scope limitation |
 | Minimum-field upstream projection | Verified live for exact record lookup and zone changes: `desiredKeys: []` returned a `fields` dictionary with zero entries while metadata remained available | Retain a content-free wire-contract regression and do not claim that unrelated endpoints share this behavior |
-| User credential import and storage | Owner and participant sessions were separately imported, principal-bound, and repeatedly rotated during live reads on 2026-09-14 without entering uncertain state | Repeat account-switch and expiry cases during release acceptance |
+| User credential import and storage | Owner and participant sessions were separately imported, principal-bound, and repeatedly rotated during live reads on 2026-09-14 without entering uncertain state; restarted installed-MCP probes repeated owner/private and participant/shared access with certain rotation on 2026-09-14; synthetic account-switch coverage now preserves the prior binding and makes the rotated slot unusable until explicit reauthentication | Repeat the live account-switch and expiry cases during release acceptance |
 | Query/date/number/error wire contracts | Synthetic fixtures and bounded projections implemented; live wire verification pending | Resolve provider differences during live acceptance without weakening the closed registry |
 | Runtime/platform support | Node 24+ with a POSIX-only credential-store claim; local Node 25 package gate passes | Add other platforms only with their own credential-store evidence |
 | npm scope/name/publisher | Registry lookup found the package name unclaimed; publishing workflow is configured but authority is not assumed | Owner configures trusted publishing and separately authorizes a release |

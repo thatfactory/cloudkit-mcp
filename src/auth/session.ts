@@ -40,7 +40,30 @@ export class SessionManager {
         } else {
           const response = typeof result.body === "object" && result.body !== null ? result.body as Record<string, unknown> : {};
           const observedPrincipal = operation === "probeCurrentUser" && typeof response.userRecordName === "string" && response.userRecordName.length <= 1024 ? response.userRecordName : stored.principalRecordName;
-          replacement = { ...stored, webAuthenticationToken: token, generation: stored.generation + 1, uncertain: false, ...(observedPrincipal ? { principalRecordName: observedPrincipal } : {}) };
+          const accountSwitched = stored.principalRecordName !== undefined
+            && observedPrincipal !== undefined
+            && observedPrincipal !== stored.principalRecordName;
+          replacement = {
+            ...stored,
+            webAuthenticationToken: token,
+            generation: stored.generation + 1,
+            uncertain: accountSwitched,
+            ...(accountSwitched || observedPrincipal === undefined ? {} : { principalRecordName: observedPrincipal }),
+          };
+          if (accountSwitched) {
+            effectiveResult = {
+              ...result,
+              error: {
+                code: "authenticationUncertain",
+                message: "The authenticated CloudKit account no longer matches the principal bound to this credential slot.",
+                execution: "completed",
+                sessionEffect: "uncertain",
+                retryable: false,
+                retryConditions: [],
+                nextStep: "Reauthenticate and import the intended account into this profile before another request.",
+              },
+            };
+          }
         }
       }
       const resolvedView = this.resolveView(profile, scope, replacement ?? stored);
