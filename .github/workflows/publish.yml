@@ -40,5 +40,6 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Verify supported npm trusted-publishing client
-        run: node -e "const { execFileSync } = require('node:child_process'); const [major, minor] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number); if (major < 11 || (major === 11 && minor < 5)) process.exit(1)"
+        run: |
+          node -e "const { execFileSync } = require('node:child_process'); const [major, minor] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number); if (major < 11 || (major === 11 && minor < 5)) process.exit(1)"
       - run: npm publish --access public --provenance
