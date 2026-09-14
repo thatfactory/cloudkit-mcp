@@ -6,9 +6,12 @@ const capabilities = JSON.parse(await readFile(new URL("../resources/capabilitie
   version: string;
   tools: string[];
   authentication: Record<string, { implemented: boolean; liveVerifiedScopes: string[] }>;
+  backendOperations: Array<{ id: string; implementationStatus: string; documentedScopes: string[]; unverifiedScopes: string[]; liveVerificationStatus: string; liveVerifiedScopes: string[]; lastObservedAt?: string }>;
   limitations: string[];
 };
 const provenance = JSON.parse(await readFile(new URL("../contracts/provenance.json", import.meta.url), "utf8")) as {
+  recordedAt: string;
+  sources: Array<{ id: string }>;
   backendDecision: { status: string };
   liveEvidence: { status: string; observedAt?: string; credentialClasses: string[]; limitations: string[] };
 };
@@ -58,5 +61,9 @@ for (const operation of policy.operations) {
   if ((operation.liveVerifiedScopes.length > 0) !== (operation.lastObservedAt !== undefined)) throw new Error(`${operation.id} must date every nonempty live verification claim`);
   if (operation.lastObservedAt !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(operation.lastObservedAt)) throw new Error(`${operation.id} has an invalid observation date`);
 }
+const publicOperations = policy.operations.map(({ id, implementationStatus, documentedScopes, unverifiedScopes = [], liveVerificationStatus, liveVerifiedScopes, lastObservedAt }) => ({ id, implementationStatus, documentedScopes, unverifiedScopes, liveVerificationStatus, liveVerifiedScopes, ...(lastObservedAt ? { lastObservedAt } : {}) }));
+if (JSON.stringify(capabilities.backendOperations) !== JSON.stringify(publicOperations)) throw new Error("public operation evidence does not match the authoritative policy contract");
+if (provenance.recordedAt < provenance.liveEvidence.observedAt!) throw new Error("provenance date predates recorded live evidence");
+if (!provenance.sources.some((source: { id?: string }) => source.id === "A8")) throw new Error("share topology provenance is missing A8");
 for (const path of ["../resources/schemas/profiles.json", "../resources/schemas/result-envelope.json"]) JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
 if (!process.argv.includes("--check")) process.stdout.write("Schemas and policy are consistent.\n");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -17,8 +18,17 @@ test("offline MCP discovery never touches credentials or network", async () => {
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 12);
+    const capabilities = JSON.parse(await readFile(new URL("../resources/capabilities.json", import.meta.url), "utf8")) as { tools: string[] };
+    assert.deepEqual(tools.tools.map((tool) => tool.name), capabilities.tools);
     assert.equal(tools.tools.every((tool) => tool.annotations?.readOnlyHint === true), true);
+    const properties = (name: string) => Object.keys((tools.tools.find((tool) => tool.name === name)?.inputSchema as { properties?: Record<string, unknown> }).properties ?? {});
+    assert.deepEqual(properties("list_zones"), ["view"]);
+    assert.deepEqual(properties("get_zone"), ["view", "zone"]);
+    assert.deepEqual(properties("get_share"), ["view", "zone", "recordName"]);
+    assert.deepEqual(properties("list_subscriptions"), ["view"]);
+    assert.deepEqual(properties("get_database_changes"), ["view", "start"]);
+    assert.deepEqual(properties("get_zone_changes"), ["view", "zone", "start"]);
+    assert.deepEqual(properties("compare_views"), ["left", "right", "leftZone", "rightZone", "recordNames"]);
     const context = await client.callTool({ name: "get_context", arguments: {} });
     assert.equal(context.isError, undefined);
     const resources = await client.listResources();

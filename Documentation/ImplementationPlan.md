@@ -319,18 +319,18 @@ Use intent-oriented names. Register the supported implementation surface consist
 
 | Tool | Principal inputs | Result / boundary |
 | --- | --- | --- |
-| `get_context` | Optional configured profile selector | Offline configuration and capability matrix; no secret or network access |
-| `probe_access` | Explicit profile and requested scope | Minimal authenticated read; verified account alias and operation availability, not a container scan |
-| `list_zones` | View, page limit/handle when supported | Account-relative zones, privacy-safe owners, completeness |
-| `get_zone` | View and zone selector | Metadata and supported sharing/change-state hints |
-| `get_records` | View, zone, exact record names or handles | Metadata-first lookup with per-record outcomes |
+| `get_context` | Optional configured profile selector | Offline profile and startup-policy state; no secret or network access; historical operation evidence is in `cloudkit://capabilities` |
+| `probe_access` | Explicit profile and requested scope | One minimal authentication/current-principal probe or documented public API-token challenge; not proof that other operations are available |
+| `list_zones` | View | Locally bounded, unpaginated owner-aware zone collection for an enabled scope |
+| `get_zone` | View and exact owner-aware zone selector | Exact presence/outcome, safe handle, and owner alias; no sharing or change-state inference |
+| `get_records` | View, zone, exact record names | Metadata-first lookup with per-record outcomes |
 | `query_records` | View, explicit zone/type, allowed filters, limit/handle | Bounded indexed query; no arbitrary predicates or cross-zone scan |
 | `read_record_fields` | View, exact records, selected allowed fields | Explicit payload access; unavailable when policy allows no fields |
-| `get_share` | View and proven zone/share/record selector | Available sharing mode, caller role, permission, redacted participants |
-| `list_subscriptions` | View and supported bounded selector | Visible subscriptions, not proof of client push delivery |
-| `get_database_changes` | View, explicit starting mode or issued cursor | Changed-zone metadata and database cursor handle |
-| `get_zone_changes` | View, zone, explicit starting mode or issued cursor | Record-change metadata/tombstones and zone cursor handle |
-| `compare_views` | Two explicit views and bounded record/zone selectors | Evidence-backed comparison with independent authorization and limitations |
+| `get_share` | View, zone, and exact record name | Available topology only when the record exposes a proven share reference; participant identities and URLs remain omitted |
+| `list_subscriptions` | View | Visible bounded subscription structure, not proof of client push delivery |
+| `get_database_changes` | View and `{kind:"beginning"}` or `{kind:"cursor",handle}` | Changed-zone metadata and database cursor handle |
+| `get_zone_changes` | View, zone, and `{kind:"beginning"}` or `{kind:"cursor",handle}` | Record-change metadata/tombstones and zone cursor handle |
+| `compare_views` | `left`, `right`, independent `leftZone`/`rightZone`, and exact record names | Exact-record comparison with independent authorization, observation windows, and limitations |
 
 Do not add a generic `request`, `execute`, `fetch_url`, `set_credentials`, or `repair_sync` tool. An optional higher-level diagnostic tool should wait until concrete usage shows that composing these tools is insufficient.
 
@@ -552,7 +552,7 @@ Work:
 2. Require two explicit views, normally in the same container/environment. Do not automatically search other accounts, environments, zones, or record types. A cross-environment comparison is a separate explicitly selected diagnostic, not the default inventory comparison.
 3. Establish correspondence using proven container/zone-owner/zone-name/record identity or an explicit mapping whose unverified status is preserved. Identical record names or profile labels alone do not prove the records or accounts are the same.
 4. Read each side with its own authorization/session and retain both observation windows. Re-authentication or identity change invalidates an in-progress comparison. Same-account sessions must be identified as such, not presented as an owner-versus-participant test.
-5. Compare existence-in-view, available metadata, sharing role, and bounded change/subscription evidence. Use direct lookup for known record names rather than relying only on queries. Do not compare opaque sync tokens as version counters. Treat cross-view change-tag equality/difference as raw evidence unless comparability is proven; neither proves complete payload identity.
+5. Compare existence-in-view and available exact-record metadata. Sharing, change, and subscription evidence remain separately composable diagnostics in `0.1.0`; `compare_views` does not fetch them implicitly. Use direct lookup for known record names rather than relying only on queries. Do not compare opaque sync tokens as version counters. Treat cross-view change-tag equality/difference as raw evidence unless comparability is proven; neither proves complete payload identity.
 6. Return evidence, limitations, likely explanations with stated confidence, and the next bounded/manual diagnostic. A permission failure on one side must not discard successful evidence from the other or masquerade as a data mismatch.
 
 Suggested diagnostic result categories:
@@ -647,7 +647,7 @@ Illustrative consumer configuration after a successful release; no secret is emb
 }
 ```
 
-The final README must use the actual implemented CLI/schema and a released pinned version, not copy this illustrative configuration without testing it. The final README must not mention other projects like WortJagd or app-store-connect-mcp; treat it as an isolated package, which it is. Fix the badges of the final README, as they were copied from the app-store-connect-mcp project. Fill the `// TBD` sections of the final README where appropriate, or remove the section if no longer needed; you can also add sections that are missing.
+At release time, recheck that the README uses the actual implemented CLI/schema and a tested released pin. Keep it isolated from internal consumer/reference-project details. Repository-specific CI/nightly/license badges are already reconciled; restore an npm-version badge only after publication succeeds. No `// TBD` placeholders remain.
 
 **Exit gate:** all applicable MVP requirements have either demonstrated behavior or evidence-backed platform limitations; the core private/shared inventory workflow is proven; exact-head review and repository/release gates pass; the authorized package can be installed and discovered without credentials.
 
@@ -657,7 +657,8 @@ The final README must use the actual implemented CLI/schema and a released pinne
 - [x] Change, sharing, subscription, and comparison adversarial coverage complete.
 - [ ] Privacy-safe release-candidate live acceptance complete for the configured profiles.
 - [ ] Human-gated account-switch, expiry, server-key, and exact-selector evidence completed or retained as explicit limitations.
-- [ ] README and public capability contracts reconciled with final evidence.
+- [x] README, tool-surface text, and public capability/provenance contracts reconciled with current implementation and evidence; offline drift checks complete.
+- [ ] Final README and public capability contracts reconciled after remaining live and human-gated evidence.
 - [x] Package-content and external-install gates complete.
 - [x] Release-path byte identity and offline preflight gates complete.
 - [ ] Final applicable governance and exact-head review complete.
@@ -707,7 +708,7 @@ Use injected clocks, transports, IDs, and deterministic scheduling controls rath
 | --- | --- | --- |
 | Does a named record exist, and in which environment/database/zone? | Explicit context plus `get_records`; owner-aware zone identity | Not found in the requested view, inaccessible, or unverified; no global nonexistence claim |
 | Do owner and participant see the same record/change metadata? | Independently authenticated views and `compare_views`, with verified correspondence | Partial/inconclusive observations, metadata not comparable, or account verification required |
-| Is a zone shared, who owns it, and what is the caller's role? | `get_zone` / `get_share`, observed topology and owner alias | Specific missing mode/role metadata from this backend; no guessed share mode |
+| Is a zone present and who owns it? What share role is available? | `get_zone` establishes owner-aware presence; `get_share` separately follows a proven record share reference | Specific missing mode/role metadata from this backend; no guessed share mode |
 | Are expected subscriptions and change state present? | Supported subscription class plus database/zone change evidence and coverage | Backend cannot inspect the relevant subscription class or app-local cursor |
 | Is the problem upload failure, visibility mismatch, stale client cursor, or something requiring Console? | Scoped evidence, exact lookup, comparison, available change state, explicit hypotheses | Upload failure/stale app cursor not established without local client evidence; name the remaining manual inspection |
 
@@ -731,11 +732,13 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Public API-token probe | Verified live on 2026-09-14: Apple accepted the configured API token and returned the documented user-authentication challenge without authenticated database access or session mutation | Keep challenge classification narrow; it does not prove public record or zone permission |
 | User credential import and storage | Owner and participant sessions were separately imported, principal-bound, and repeatedly rotated during live reads on 2026-09-14 without entering uncertain state; restarted installed-MCP probes repeated owner/private and participant/shared access with certain rotation on 2026-09-14; synthetic account-switch coverage now preserves the prior binding and makes the rotated slot unusable until explicit reauthentication | Repeat the live account-switch and expiry cases during release acceptance |
 | Query/date/number/error wire contracts | Adversarial synthetic coverage validates bounded typed scalar and homogeneous `IN` filters, precision-loss rejection, exact wire dictionaries, strict record collections, identity-correlated lookup, empty partial pages, context-bound markers with cycle detection and full-page registry pressure, query-lag versus exact-lookup semantics, privacy-safe top-level and per-item errors, malformed dates and record identities, numeric-string preservation, explicit nested identity/asset redaction, unexpected-field omission, and aggregate projection exhaustion; the exact unavailable-index provider code and all live wire behavior remain pending | Resolve provider differences during live acceptance without weakening the closed registry |
+| Release-acceptance profile payload policy | Current profiles are metadata-only: allowed record types, queryable fields, and readable payload fields are empty | Live `query_records` needs an operator-supplied privacy-safe record type, indexed field, and value plus an explicit external startup-policy amendment; infer and commit no private selector |
 | Runtime/platform support | Node 24+ with a POSIX-only credential-store claim; local Node 25 package gate passes | Add other platforms only with their own credential-store evidence |
 | Release artifact identity | Offline synthetic preflight binds the release tag, package version, event SHA, checkout, expected repository, and main ancestry; the workflow creates one authoritative tarball, verifies its actual contents and SHA-1/SHA-512 integrity, installs and smokes those bytes offline, re-verifies them, and names that exact file for any future authorized publish | No release or npm publication was authorized or performed; retain release-only OIDC and recheck exact source and artifact integrity at release time |
 | npm scope/name/publisher | Registry lookup found the package name unclaimed; publishing workflow is configured but authority is not assumed | Owner configures trusted publishing and separately authorizes a release |
 | Full live acceptance | Two-account core read acceptance run on 2026-09-14 with CloudKit Web Services v1 and Node 25: identity probes, private zone list/lookup, shared database/zone changes, matching canonical named-record reads, empty-field projection, and owner subscription listing passed; no mutations | Complete the remaining adversarial, secondary-capability, exact-head release, and publication gates before release |
-| Exact-head code review | Not performed by this plan | Record actual PR/base/head and result |
+| Public contract reconciliation | Current README, tool table, packaged capability resource, operation policy, provenance, runtime tool registry, and high-risk MCP input schemas are cross-checked; current live versus synthetic boundaries and metadata-only profile constraints are explicit | Repeat the final prose/evidence reconciliation after any remaining live or human-gated acceptance changes |
+| Exact-head code review | Implementation PRs through the current public-contract reconciliation slice use immutable base/head Relay review with green CI before merge; the final release identity is not yet reviewed | Repeat for any remaining source/evidence changes and the final applicable release candidate |
 | npm publication | Not authorized or performed by this plan | Owner-authorized release with integrity and install evidence |
 
 ## 9. Sources and provenance
