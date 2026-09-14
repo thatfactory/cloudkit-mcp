@@ -43,3 +43,25 @@ test("web-user response without replacement makes the slot uncertain and does no
   assert.equal(saved.class === "web-user" && saved.uncertain, true);
   await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /marked uncertain/);
 });
+
+test("web-user probe fails closed when the authenticated account changes", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-session-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
+  const store = new CredentialStore(root); await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "old", generation: 7, principalEpoch: "original-epoch", principalRecordName: "original-principal" });
+  const transport = new CloudKitTransport(async () => new Response(JSON.stringify({ userRecordName: "different-principal" }), {
+    status: 200,
+    headers: { "x-apple-cloudkit-web-auth-token": "replacement-for-different-account" },
+  }));
+  const manager = new SessionManager(store, transport);
+
+  await assert.rejects(manager.execute(profile, "private", "probeCurrentUser", {}), /no longer matches the principal bound/);
+
+  const saved = await store.read("owner");
+  assert.equal(saved.class, "web-user");
+  if (saved.class !== "web-user") return;
+  assert.equal(saved.webAuthenticationToken, "replacement-for-different-account");
+  assert.equal(saved.generation, 8);
+  assert.equal(saved.principalEpoch, "original-epoch");
+  assert.equal(saved.principalRecordName, "original-principal");
+  assert.equal(saved.uncertain, true);
+  await assert.rejects(manager.execute(profile, "private", "probeCurrentUser", {}), /marked uncertain/);
+});
