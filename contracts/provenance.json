@@ -6,12 +6,6 @@
     "commit": "6d818dd57cbdf7b079388be14fb7a1cdc9060f02",
     "verification": "local immutable commit resolved"
   },
-  "governance": {
-    "repository": "thatfactory/agent-guidelines",
-    "version": "0.0.32",
-    "commit": "7d766ecd9d8d84786c81e169221eb42434c2ad93",
-    "verification": "tag commit and synchronized subtree"
-  },
   "backendDecision": {
     "selected": "cloudkit-web-services",
     "authentication": "api-token-plus-web-authentication-token",
