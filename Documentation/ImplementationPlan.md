@@ -131,7 +131,6 @@ Dependencies point inward: domain models and comparison logic do not import MCP 
 ```text
 cloudkit-mcp/
   AGENTS.md
-  AgentGuidelines/
   Documentation/ImplementationPlan.md
   src/
     index.ts                 # CLI dispatch, stdio startup, process lifecycle
@@ -369,7 +368,7 @@ Implement phases in order unless their dependencies explicitly allow isolated wo
 Work:
 
 1. Reconfirm the reference commit and inspect any applicable local guidance. Record differences from this audit without silently switching the reference baseline mid-phase.
-2. Resolve the latest stable AgentGuidelines release and its commit. Version `0.0.32` was returned by the release lookup during preparation; recheck at implementation rather than treating this as permanently current. [G1]
+2. Confirm the repository-local npm package and workflow conventions against the reference MCP repositories.
 3. Complete the operation-level matrix in Section 3. Keep docs-derived and live-proven support distinct. Record exact wire parameters, endpoint scopes, SDK versions, numeric/date handling, and response/error variants in machine-readable contracts with source provenance.
 4. Run a manually authorized spike with disposable data and two distinct consenting accounts: an owner and an ordinary invited participant. Prepare the custom zone, sample records, root-record share, and zone-wide share outside the MCP using an authorized test app or Console. Do not create a test-seeding write path inside the distributed server.
 5. Demonstrate owner/private and participant/shared lookup of the same logical record, including the owner's zone identity. Test list/query, metadata projection, share discovery, participant visibility, subscriptions, changes, and expiry to the extent the public surface supports them.
@@ -395,7 +394,7 @@ Work:
 2. Implement a shebang-equipped CLI, default stdio serving, explicit `--help` and `--version`, and deterministic process exit behavior. In serve mode reserve stdout for protocol traffic. Reject unknown flags; in the MVP `--allow-writes` must not activate anything.
 3. Build `createServer(dependencies)` without side effects. Add offline capability/schema resources and minimal context reporting. Use one authoritative package version.
 4. Add clean, build, typecheck, test, schema-consistency, package-verification, smoke, and aggregate check scripts. A fresh checkout must be able to run `npm ci` and `npm run check`.
-5. Adopt AgentGuidelines as its documented versioned subtree, root contracts, `.gitattributes`, and completion-audit integration. Its consumer validator is a development/CI requirement, not a Node package runtime dependency. Follow only applicable general guidance; document the TypeScript/structured-stderr exception to Swift-specific logging or build rules instead of adding Swift frameworks to this npm package. [G2]
+5. Keep repository guidance local to this npm package and aligned with the reference npm MCP repositories.
 6. Start secretless CI and tarball checks immediately. Keep publishing disabled until Phase 10.
 
 **Tests:** subprocess help/version; MCP startup and discovery with credential providers that throw on access; a network implementation that throws if invoked; protocol-only stdout; clean shutdown; install and execute a packed tarball outside the source checkout.
@@ -587,7 +586,7 @@ Complete adversarial testing of malformed responses, callback/input handling whe
 
 #### 10B. Package and CI gates
 
-The package must contain only required `dist/`, safe `resources/`, `package.json`, `README.md`, and `LICENSE`. Check the actual tarball against this allowlist. Exclude source maps with embedded content, fixtures, source contracts/captures, credentials, state, test harnesses, `AgentGuidelines/`, and local configuration.
+The package must contain only required `dist/`, safe `resources/`, `package.json`, `README.md`, and `LICENSE`. Check the actual tarball against this allowlist. Exclude source maps with embedded content, fixtures, source contracts/captures, credentials, state, test harnesses, and local configuration.
 
 Install the tarball in a fresh directory outside the checkout using production dependencies only. Test executable permission/shebang, help/version, stdio startup, tool/resource discovery, offline validation, and bounded fixture-driven tool execution. The package must not depend on source-tree paths, Xcode, Swift, a globally installed TypeScript compiler, or development dependencies.
 
@@ -599,13 +598,13 @@ npm run check
 npm pack --json --dry-run
 ```
 
-`npm run check` must aggregate non-mutating lint/format validation if adopted, schema/policy consistency, type checking, all offline tests, clean build, package verification, and external tarball smoke tests. Run the AgentGuidelines native consumer validator and completion audit in an appropriately provisioned development/CI job, separately from portable npm runtime validation. [G2]
+`npm run check` must aggregate non-mutating lint/format validation if adopted, schema/policy consistency, type checking, all offline tests, clean build, package verification, and external tarball smoke tests.
 
 Use secretless GitHub-hosted jobs for untrusted pull requests. A trusted self-hosted macOS lane may follow local governance for native consumer checks, but must not execute untrusted contributor code with accessible local credentials. Publishing uses an eligible hosted runner, not a developer's personal Mac. [N1]
 
 #### 10C. Exact-head merge and release review
 
-Before release, deliberately recheck AgentGuidelines updates. Adopt any required update in a separately reviewed commit and rerun its consumer audit; do not silently update policy during publication.
+Before release, deliberately recheck the package's repository-local contracts and current npm publishing requirements.
 
 Obtain the required ChatGPT review for the exact PR identity: repository/PR, base SHA, and head SHA. Follow the root Code Review Rules for severities and merge gating. Any code, generated contract, dependency, or release configuration change after review requires the corresponding review/gates again. Do not treat this implementation plan as that code review.
 
@@ -710,7 +709,6 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Decision / evidence | Initial state | Required resolution |
 | --- | --- | --- |
 | Reference repository baseline | Inspected: `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` | Record any deliberate baseline update |
-| AgentGuidelines version/commit | Installed `0.0.32` from commit `7d766ecd9d8d84786c81e169221eb42434c2ad93` as a provenance-preserved subtree | Recheck the stable release before a later release cycle |
 | Authenticated-user backend | Selected architecture: CloudKit Web Services with API token plus web-authentication token; live feasibility pending | Prove the selected path with ordinary owner/participant accounts; CKTool JS is excluded from the MVP because ordinary-participant authentication and the full diagnostic surface are not established |
 | Normal participant-account authentication | Pending | Prove without assuming developer-team enrollment |
 | Owner/private and participant/shared named lookup | Synthetic isolated-profile lookup and comparison pass; live test pending | Run the two-account live acceptance harness with a dedicated container |
@@ -778,12 +776,8 @@ All R-series references use commit `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` of
 
 **[A12] Deprecated Fetching Record Changes (`records/changes`).** Points to `changes/zone`; retained here to prevent adopting the deprecated route. `https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/ChangeRecords.html`
 
-### MCP, npm, and repository governance
+### MCP, npm, and repository workflow
 
 **[M1] MCP tools specification.** Use the version actually supported by the chosen official SDK and target clients; the retrieved specification was dated 2026-07-28. `https://modelcontextprotocol.io/specification/2026-07-28/server/tools`
 
 **[N1] npm trusted publishing.** OIDC configuration, supported runners/toolchain, direct-publish permissions, and provenance eligibility. Reverify at release. `https://docs.npmjs.com/trusted-publishers/`
-
-**[G1] AgentGuidelines release lookup.** The lookup returned stable release `0.0.32` during this audit; implementation must resolve the then-current stable tag and immutable commit. `https://github.com/thatfactory/agent-guidelines/releases/tag/0.0.32`
-
-**[G2] AgentGuidelines consumer integration.** Versioned subtree, marked root contracts, audit integration, and native consumer validator. `https://github.com/thatfactory/agent-guidelines/blob/0.0.32/README.md`

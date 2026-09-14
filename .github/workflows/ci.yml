@@ -20,12 +20,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-
-  governance:
-    runs-on: macos-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - run: AgentGuidelines/Scripts/validate_consumer_setup.swift
-      - run: AgentGuidelines/.agents/skills/agent-guidelines-audit/scripts/check_markdown_wrapping.swift AGENTS.md README.md Documentation
-      - run: git diff --check

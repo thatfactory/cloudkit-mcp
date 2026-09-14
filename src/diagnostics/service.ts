@@ -53,8 +53,11 @@ export class DiagnosticService {
     return this.#remote("probeCurrentUser", view, {}, (body, profile) => {
       const object = asObject(body);
       const principal = boundedString(object.userRecordName, 1024);
+      const apiTokenAccepted = profile.authenticationMode === "api-token-public" && object.serverErrorCode === "AUTHENTICATION_REQUIRED" && typeof object.redirectURL === "string";
       return {
         accessible: principal !== undefined,
+        apiTokenAccepted,
+        userAuthenticationRequired: apiTokenAccepted,
         principalObserved: principal !== undefined,
         principalAlias: principal ? this.sessions.alias("account", profile.containerId, principal) : undefined,
         capability: { documented: true, implemented: true, liveVerified: false, currentlyAuthorized: principal !== undefined },
