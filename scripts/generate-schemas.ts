@@ -10,7 +10,7 @@ const capabilities = JSON.parse(await readFile(new URL("../resources/capabilitie
 };
 const provenance = JSON.parse(await readFile(new URL("../contracts/provenance.json", import.meta.url), "utf8")) as {
   backendDecision: { status: string };
-  liveEvidence: { status: string; observedAt?: string; limitations: string[] };
+  liveEvidence: { status: string; observedAt?: string; credentialClasses: string[]; limitations: string[] };
 };
 const policy = JSON.parse(await readFile(new URL("../contracts/operation-policy.json", import.meta.url), "utf8")) as {
   operations: Array<{
@@ -33,6 +33,12 @@ if (JSON.stringify(capabilities.tools) !== JSON.stringify(expectedTools)) throw 
 if (Object.values(capabilities.authentication).some(({ implemented, liveVerifiedScopes }) => implemented !== true || !Array.isArray(liveVerifiedScopes))) throw new Error("authentication capability evidence is inconsistent");
 if (capabilities.limitations.some((limitation) => /no operation has live cloudkit verification/i.test(limitation))) throw new Error("capability limitations contain stale live-evidence claims");
 if (provenance.backendDecision.status !== "selectedAndCoreWorkflowLiveVerified" || provenance.liveEvidence.status !== "coreWorkflowVerified" || provenance.liveEvidence.observedAt === undefined) throw new Error("provenance does not record the verified core workflow");
+const capabilityCredentialNames: Record<string, string> = { serverKey: "server-key", apiTokenPublic: "api-token-public", webUser: "api-token-plus-web-authentication-token" };
+const liveCredentialClasses = Object.entries(capabilities.authentication)
+  .filter(([, evidence]) => evidence.liveVerifiedScopes.length > 0)
+  .map(([name]) => capabilityCredentialNames[name])
+  .sort();
+if (JSON.stringify([...provenance.liveEvidence.credentialClasses].sort()) !== JSON.stringify(liveCredentialClasses)) throw new Error("provenance credential classes do not match live authentication capabilities");
 if (policy.operations.length !== 8 || policy.operations.some((operation) => operation.effect !== "read")) throw new Error("operation policy must contain exactly the closed read registry");
 const runtimePolicies = operationPolicies();
 if (JSON.stringify(policy.operations.map(({ id }) => id)) !== JSON.stringify(runtimePolicies.map(({ id }) => id))) throw new Error("operation contract ids do not match the runtime registry");

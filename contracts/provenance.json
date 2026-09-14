@@ -68,7 +68,7 @@
     "observedAt": "2026-09-14",
     "apiVersion": "1",
     "runtime": "Node.js 25",
-    "credentialClasses": ["api-token-plus-web-authentication-token"],
+    "credentialClasses": ["api-token-public", "api-token-plus-web-authentication-token"],
     "verified": [
       "public API-token authentication challenge without authenticated database access",
       "ordinary owner private authentication and principal-bound session rotation",
