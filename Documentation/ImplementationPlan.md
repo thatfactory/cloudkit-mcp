@@ -1,6 +1,6 @@
 # CloudKit MCP - Implementation Plan
 
-Status: implementation-ready roadmap; CloudKit live-access gates remain unverified. Prepared: 2026-09-13. Primary requirements: the supplied `CloudKitMCP.md` handoff, with the subsequently agreed naming change. Suggested repository location: `Documentation/ImplementationPlan.md`.
+Status: implementation-ready roadmap; owner/private authentication and zone-read gates verified on 2026-09-14, while participant/shared gates remain unverified. Prepared: 2026-09-13. Primary requirements: the supplied `CloudKitMCP.md` handoff, with the subsequently agreed naming change. Suggested repository location: `Documentation/ImplementationPlan.md`.
 
 | Identity | Value |
 | --- | --- |
@@ -709,18 +709,18 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Decision / evidence | Initial state | Required resolution |
 | --- | --- | --- |
 | Reference repository baseline | Inspected: `6d818dd57cbdf7b079388be14fb7a1cdc9060f02` | Record any deliberate baseline update |
-| Authenticated-user backend | Selected architecture: CloudKit Web Services with API token plus web-authentication token; live feasibility pending | Prove the selected path with ordinary owner/participant accounts; CKTool JS is excluded from the MVP because ordinary-participant authentication and the full diagnostic surface are not established |
+| Authenticated-user backend | Owner/private verified live on 2026-09-14: the browser callback supplied `ckSession`; requests used the `ckSession` query parameter, replacement sessions arrived in `x-apple-cloudkit-web-auth-token`, and serialized rotation remained certain | Prove the same selected path with an ordinary participant account; CKTool JS remains excluded because ordinary-participant authentication and the full diagnostic surface are not established |
 | Normal participant-account authentication | Pending | Prove without assuming developer-team enrollment |
-| Owner/private and participant/shared named lookup | Synthetic isolated-profile lookup and comparison pass; live test pending | Run the two-account live acceptance harness with a dedicated container |
+| Owner/private and participant/shared named lookup | Owner/private current-user probe, two-zone discovery, and exact zone lookup passed live on 2026-09-14; participant/shared record comparison remains pending | Complete the participant/shared half and the two-account named-record comparison |
 | Shared-zone discovery | Pending for selected backend | Verified support, explicit lookup-only mode, or precise limitation |
 | Zone-wide share discovery/mode | Pending | Proven metadata or declared backend limitation |
 | Native database subscriptions through selected API | Pending | Exact type/scope visibility contract |
 | Minimum-field upstream projection | Pending | Demonstrate behavior, including empty field selection |
-| User credential import and storage | Hidden terminal import, safe status/removal, owner-only atomic storage, cross-process lease, rotation, and uncertainty tests implemented | Live credential lifecycle remains pending |
+| User credential import and storage | Hidden import and owner-only atomic storage are implemented; an owner session was imported and rotated across five consecutive live reads on 2026-09-14, ending generation 6, principal-bound and not uncertain | Repeat with the ordinary participant credential and verify account separation |
 | Query/date/number/error wire contracts | Synthetic fixtures and bounded projections implemented; live wire verification pending | Resolve provider differences during live acceptance without weakening the closed registry |
 | Runtime/platform support | Node 24+ with a POSIX-only credential-store claim; local Node 25 package gate passes | Add other platforms only with their own credential-store evidence |
 | npm scope/name/publisher | Registry lookup found the package name unclaimed; publishing workflow is configured but authority is not assumed | Owner configures trusted publishing and separately authorizes a release |
-| Full live acceptance | Not run | Date, backend/version, reviewed SHA, outcomes and limitations |
+| Full live acceptance | Partial owner/private acceptance run on 2026-09-14 with CloudKit Web Services v1 and Node 25; no mutations; participant/shared and named-record gates remain | Record the reviewed PR/base/head for this correction, then complete two-account acceptance |
 | Exact-head code review | Not performed by this plan | Record actual PR/base/head and result |
 | npm publication | Not authorized or performed by this plan | Owner-authorized release with integrity and install evidence |
 

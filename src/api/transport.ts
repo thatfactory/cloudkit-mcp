@@ -217,7 +217,7 @@ function buildURL(pathTemplate: string, context: TransportContext, credential: T
   const operationPath = pathTemplate.replace("{scope}", encodeURIComponent(context.scope));
   const url = new URL(`/database/1/${encodeURIComponent(context.containerId)}/${encodeURIComponent(context.environment)}${operationPath}`, CLOUDKIT_ORIGIN);
   if (credential.mode === "api-token-public" || credential.mode === "web-user") url.searchParams.set("ckAPIToken", credential.apiToken);
-  if (credential.mode === "web-user") url.searchParams.set("ckWebAuthToken", credential.webAuthenticationToken);
+  if (credential.mode === "web-user") url.searchParams.set("ckSession", credential.webAuthenticationToken);
   if (url.origin !== CLOUDKIT_ORIGIN || url.username || url.password || url.port || url.hash) throw new Error("invariant violation");
   return url;
 }

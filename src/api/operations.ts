@@ -15,7 +15,7 @@ export type OperationId =
 export interface OperationPolicy {
   readonly id: OperationId;
   readonly method: "GET" | "POST";
-  readonly path: `${string}/{scope}/${string}`;
+  readonly path: `/${string}`;
   readonly effect: "read";
   readonly authenticationModes: readonly AuthenticationMode[];
   readonly documentedScopes: readonly DatabaseScope[];
@@ -27,7 +27,7 @@ const policies: Readonly<Record<OperationId, OperationPolicy>> = {
   probeCurrentUser: {
     id: "probeCurrentUser",
     method: "GET",
-    path: "/{scope}/users/caller",
+    path: "/public/users/caller",
     effect: "read",
     authenticationModes: ["api-token-public", "web-user"],
     documentedScopes: ["public", "private", "shared"],
