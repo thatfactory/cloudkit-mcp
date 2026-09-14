@@ -55,6 +55,7 @@ export class CloudKitTransport {
     authorize(policy.authenticationModes, policy.documentedScopes, policy.unverifiedScopes, context.scope, credential.mode);
     const release = await this.#semaphore.acquire(parentSignal);
     try {
+    if (parentSignal?.aborted) throw queueError("cancelled", "The CloudKit read was cancelled before dispatch.", false);
     const encodedBody = policy.method === "POST" ? Buffer.from(JSON.stringify(body ?? {}), "utf8") : Buffer.alloc(0);
     if (encodedBody.byteLength > 64 * 1024) {
       throw safeError({
@@ -77,9 +78,11 @@ export class CloudKitTransport {
     const timer = setTimeout(() => controller.abort("deadline"), this.requestTimeoutMilliseconds);
     const abort = (): void => controller.abort(parentSignal?.reason);
     parentSignal?.addEventListener("abort", abort, { once: true });
+    if (parentSignal?.aborted) controller.abort(parentSignal.reason);
     try {
       let response: Response;
       try {
+        if (controller.signal.aborted) throw queueError("cancelled", "The CloudKit read was cancelled before dispatch.", false);
         response = await this.fetchTransport(url, {
           method: policy.method,
           headers,
@@ -87,7 +90,8 @@ export class CloudKitTransport {
           redirect: "manual",
           signal: controller.signal,
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof CloudKitMCPError) throw error;
         throw safeError({
           code: parentSignal?.aborted ? "cancelled" : "timeout",
           message: parentSignal?.aborted ? "The CloudKit read was cancelled." : "The CloudKit read did not produce a bounded response.",

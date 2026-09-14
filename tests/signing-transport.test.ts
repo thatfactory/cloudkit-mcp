@@ -166,6 +166,44 @@ test("queued cancellation never dispatches the cancelled request", async () => {
   await Promise.all(active);
 });
 
+test("immediate cancellation cannot race an available permit into dispatch", async () => {
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => { calls += 1; return new Response("{}"); });
+  const controller = new AbortController();
+  const request = transport.execute("lookupRecords", publicContext, publicCredential, {}, controller.signal);
+  controller.abort();
+  await assert.rejects(request, (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "cancelled");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  assert.equal(calls, 0);
+});
+
+test("cancellation after dequeue cannot race a granted permit into dispatch", async () => {
+  const releases: Array<() => void> = [];
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => {
+    calls += 1;
+    await new Promise<void>((resolvePromise) => releases.push(resolvePromise));
+    return new Response("{}");
+  });
+  const active = Array.from({ length: 4 }, () => transport.execute("lookupRecords", publicContext, publicCredential, {}));
+  while (calls < 4) await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  const controller = new AbortController();
+  const queued = transport.execute("lookupRecords", publicContext, publicCredential, {}, controller.signal);
+  releases.shift()?.();
+  controller.abort();
+  await assert.rejects(queued, (error: unknown) => {
+    assert.equal((error as { details?: { code?: string; execution?: string } }).details?.code, "cancelled");
+    assert.equal((error as { details?: { execution?: string } }).details?.execution, "notStarted");
+    return true;
+  });
+  assert.equal(calls, 4);
+  while (releases.length) releases.shift()?.();
+  await Promise.all(active);
+});
+
 test("bounded queue rejects overflow before dispatch", async () => {
   const releases: Array<() => void> = [];
   let calls = 0;
