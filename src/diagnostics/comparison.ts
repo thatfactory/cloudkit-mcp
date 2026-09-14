@@ -61,6 +61,7 @@ function compareRecord(
   rightView: ViewObservation,
 ): ComparisonConclusion {
   const limitations = [...leftView.limitations, ...rightView.limitations];
+  if (leftView.view.principalAlias === rightView.view.principalAlias) limitations.push("Both profiles resolve to the same authenticated principal; this is not an owner-versus-participant observation.");
   if (leftView.identityMapping !== "verified" || rightView.identityMapping !== "verified") {
     return {
       category: "inconclusive",
@@ -69,6 +70,16 @@ function compareRecord(
       evidence: ["Record correspondence or principal identity is not verified."],
       limitations,
       nextStep: "Verify owner-aware zone and principal correspondence before interpreting visibility.",
+    };
+  }
+  if (leftView.view.principalAlias === rightView.view.principalAlias) {
+    return {
+      category: "inconclusive",
+      confidence: "high",
+      recordSelector: selector,
+      evidence: ["Both profiles resolve to the same authenticated principal."],
+      limitations,
+      nextStep: "Use two independently authenticated principals before interpreting this as an owner-versus-participant comparison.",
     };
   }
   if (left?.outcome === "present" && right?.outcome === "present") {
@@ -85,6 +96,17 @@ function compareRecord(
     };
   }
   if (left?.outcome === "present" || right?.outcome === "present") {
+    const other = left?.outcome === "present" ? right : left;
+    if (other === undefined || other.outcome === "unknown") {
+      return {
+        category: "inconclusive",
+        confidence: "low",
+        recordSelector: selector,
+        evidence: ["One view observed the record, but the other observation was incomplete or failed."],
+        limitations,
+        nextStep: "Restore the failed authorization or response path and repeat the exact lookup without discarding the successful evidence.",
+      };
+    }
     return {
       category: "visibilityMismatch",
       confidence: "medium",

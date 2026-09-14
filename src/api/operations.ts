@@ -1,4 +1,5 @@
 import type { AuthenticationMode, DatabaseScope } from "../domain/types.js";
+import { safeError } from "../errors.js";
 
 /** Identifier of a closed, read-only CloudKit operation. */
 export type OperationId =
@@ -114,4 +115,12 @@ export function operationPolicy(id: OperationId): OperationPolicy {
 /** Returns the complete closed operation registry. */
 export function operationPolicies(): readonly OperationPolicy[] {
   return Object.values(policies);
+}
+
+/** Rejects unsupported operation context before credential material is resolved. */
+export function preflightOperation(id: OperationId, mode: AuthenticationMode, scope: DatabaseScope): void {
+  const policy = operationPolicy(id);
+  if (!policy.authenticationModes.includes(mode)) throw safeError({ code: "authenticationRequired", message: "This credential class cannot authorize the selected operation.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Select a profile with the operation's documented credential class." });
+  if (policy.unverifiedScopes.includes(scope)) throw safeError({ code: "unverifiedCapability", message: "This operation and database scope have not passed the required live capability gate.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Run the operator acceptance harness against a dedicated synthetic container before enabling this scope." });
+  if (!policy.documentedScopes.includes(scope)) throw safeError({ code: "unsupportedCapability", message: "The selected operation is not supported for this database scope.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Choose a documented scope or use the named selector workflow described by get_context." });
 }
