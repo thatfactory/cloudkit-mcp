@@ -62,6 +62,13 @@ export class HandleRegistry {
     return handle;
   }
 
+  /** Returns an opaque observation identity without consuming retrievable registry capacity. */
+  issueObservation(kind: string, context: HandleContext): string {
+    const nonce = randomBytes(18).toString("base64url");
+    const digest = createHmac("sha256", this.#secret).update(`${kind}\0${nonce}\0${JSON.stringify(context)}`).digest("base64url").slice(0, 24);
+    return `${kind}_${nonce}.${digest}`;
+  }
+
   /** Resolves an issued value only when every context dimension still matches. */
   resolve<T>(handle: string, expected: HandleContext): T {
     this.#purgeExpired();
