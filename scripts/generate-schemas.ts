@@ -63,7 +63,7 @@ for (const operation of policy.operations) {
 }
 const publicOperations = policy.operations.map(({ id, implementationStatus, documentedScopes, unverifiedScopes = [], liveVerificationStatus, liveVerifiedScopes, lastObservedAt }) => ({ id, implementationStatus, documentedScopes, unverifiedScopes, liveVerificationStatus, liveVerifiedScopes, ...(lastObservedAt ? { lastObservedAt } : {}) }));
 if (JSON.stringify(capabilities.backendOperations) !== JSON.stringify(publicOperations)) throw new Error("public operation evidence does not match the authoritative policy contract");
-if (provenance.recordedAt < provenance.liveEvidence.observedAt!) throw new Error("provenance date predates recorded live evidence");
+if (!/^\d{4}-\d{2}-\d{2}$/.test(provenance.recordedAt) || provenance.recordedAt < provenance.liveEvidence.observedAt!) throw new Error("provenance date is invalid or predates recorded live evidence");
 if (!provenance.sources.some((source: { id?: string }) => source.id === "A8")) throw new Error("share topology provenance is missing A8");
 for (const path of ["../resources/schemas/profiles.json", "../resources/schemas/result-envelope.json"]) JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
 if (!process.argv.includes("--check")) process.stdout.write("Schemas and policy are consistent.\n");

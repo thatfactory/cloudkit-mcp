@@ -60,7 +60,7 @@ Profiles contain policy and credential references, never secret values:
 }
 ```
 
-Empty `allowedTypes` or `queryableFields` intentionally makes `query_records` unavailable for that profile. Empty `readablePayloadFields` likewise keeps `read_record_fields` unavailable while metadata-only exact lookup remains usable. Add policy entries only for explicitly selected, privacy-safe schema elements.
+Empty `allowedTypes` makes `query_records` unavailable for that profile. Empty `queryableFields` disables filtered queries, but an allowed record type can still use a zero-filter query. Empty `readablePayloadFields` keeps `read_record_fields` unavailable while metadata-only exact lookup remains usable. Add policy entries only for explicitly selected, privacy-safe schema elements.
 
 Use absolute paths when starting the server. There are no credential environment variables and no automatic `.env`, browser-cookie, Keychain-enumeration, or repository configuration discovery paths.
 
@@ -136,8 +136,8 @@ claude mcp add cloudkit -- \
 | Tool | Purpose |
 | --- | --- |
 | `get_context` | Offline profiles, policy, and capability state without credential or network access |
-| `probe_access` | Minimal authenticated current-principal probe for one explicit view |
-| `list_zones` | Bounded zone discovery where that scope is verified |
+| `probe_access` | Minimal authentication/current-principal probe; a public API token may yield only the documented user-authentication challenge |
+| `list_zones` | Bounded zone discovery for an enabled documented scope |
 | `get_zone` | Exact owner-aware zone lookup |
 | `get_records` | Metadata-first lookup of at most 20 exact records |
 | `query_records` | Bounded typed indexed query with policy-enabled filters |

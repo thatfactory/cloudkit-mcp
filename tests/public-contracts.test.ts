@@ -9,6 +9,7 @@ test("public documentation retains exact high-risk tool boundaries", async () =>
   assert.doesNotMatch(plan, /`get_zone`[^\n]*sharing\/change-state hints/);
   assert.match(plan, /`compare_views`[^\n]*`leftZone`\/`rightZone`/);
   assert.match(readme, /cloudkit:\/\/capabilities/);
-  assert.match(readme, /Empty `allowedTypes` or `queryableFields` intentionally makes `query_records` unavailable/);
+  assert.match(readme, /Empty `allowedTypes` makes `query_records` unavailable/);
+  assert.match(readme, /Empty `queryableFields` disables filtered queries, but an allowed record type can still use a zero-filter query/);
   assert.doesNotMatch(readme, /img\.shields\.io\/npm\/v/);
 });
