@@ -324,7 +324,7 @@ Use intent-oriented names. Register the supported implementation surface consist
 | `list_zones` | View, page limit/handle when supported | Account-relative zones, privacy-safe owners, completeness |
 | `get_zone` | View and zone selector | Metadata and supported sharing/change-state hints |
 | `get_records` | View, zone, exact record names or handles | Metadata-first lookup with per-record outcomes |
-| `query_records` | View, explicit zone/type, allowed filters/sort, limit/handle | Bounded indexed query; no arbitrary predicates or cross-zone scan |
+| `query_records` | View, explicit zone/type, allowed filters, limit/handle | Bounded indexed query; no arbitrary predicates or cross-zone scan |
 | `read_record_fields` | View, exact records, selected allowed fields | Explicit payload access; unavailable when policy allows no fields |
 | `get_share` | View and proven zone/share/record selector | Available sharing mode, caller role, permission, redacted participants |
 | `list_subscriptions` | View and supported bounded selector | Visible subscriptions, not proof of client push delivery |
@@ -440,7 +440,11 @@ Work:
 **Exit gate:** approved public reads work against fixtures and a separately authorized synthetic live target; every non-read operation is unreachable. Verify signing live before claiming real server-key support.
 
 - [x] Operation registry and bounded transport implemented.
-- [ ] Signing, retry guidance, error parsing, and public probe live-validated; deterministic signing and transport tests pass, while automatic retries remain deliberately disabled.
+- [x] Deterministic server-key signing contract implemented and independently verified synthetically.
+- [x] Public API-token challenge and authenticated web-user probe/session-rotation contracts live-verified.
+- [ ] Complete deterministic transport/error adversarial coverage; provider error/retry variants remain live-unverified.
+- [ ] Live server-key signing remains unverified and is not required for the proven web-user MVP path.
+- [x] Automatic transport retries remain deliberately unavailable; safe errors expose bounded retry eligibility instead.
 
 ### Phase 04 - Manual user authentication and session isolation
 
@@ -488,11 +492,11 @@ Work:
 
 **PR 06A: named metadata lookup.** Implement `get_records` for an explicit zone and bounded named records/handles, with one outcome per requested item. Project change tags, available timestamps, references, and observed deletion status. Preserve incomplete metadata and per-item errors. A successful HTTP response is not proof every record was fetched. [A2]
 
-**PR 06B: typed bounded queries.** Implement `query_records` with an explicit record type and zone, a small allowlisted comparator set, typed values, permitted indexed fields, and bounded sort descriptors. Do not accept predicate strings, raw JSON query bodies, arbitrary system fields, or all-zone scans. Record that indexes are asynchronous and query results do not establish authoritative absence; recommend exact-name lookup when possible. Keep markers bound to the complete query and principal context. [A3]
+**PR 06B: typed bounded queries.** Implement `query_records` with an explicit record type and zone, a small allowlisted comparator set, typed values, and permitted indexed fields. Sorting is not part of the `0.1.0` contract. Do not accept predicate strings, raw JSON query bodies, arbitrary system fields, or all-zone scans. Record that indexes are asynchronous and query results do not establish authoritative absence; recommend exact-name lookup when possible. Keep markers bound to the complete query and principal context. [A3]
 
 **PR 06C: selected payload fields.** Implement `read_record_fields` only after metadata-only behavior is tested. Require exact fields and records plus startup authorization. Bound strings/arrays/binary representations and omit asset links. Explicitly label whether fields were not requested, unavailable, redacted, or returned. Do not silently return an entire record when selective projection is unsupported.
 
-**Tests:** mixed lookup success/failure; same record name in another scope; missing record type; unqueryable field; absent query index; asynchronous index lag fixture; repeated continuation marker; changed filter/sort/projection; output budget exhausted mid-page; unknown scalar types; large numbers without precision loss; nested references; payload containing tokens/share URLs and prompt-injection text; unexpected upstream full payload despite minimum projection.
+**Tests:** mixed lookup success/failure; same record name in another scope; missing record type; unqueryable field; absent query index; asynchronous index lag fixture; repeated continuation marker; changed filter/projection; output budget exhausted mid-page; unknown scalar types; large numbers without precision loss; nested references; payload containing tokens/share URLs and prompt-injection text; unexpected upstream full payload despite minimum projection.
 
 **Exit gate:** lookup and query semantics are distinct, paging never skips withheld items, default tools return no vocabulary payloads, and authorized selected-field reads remain narrowly scoped.
 
@@ -647,9 +651,15 @@ The final README must use the actual implemented CLI/schema and a released pinne
 
 **Exit gate:** all applicable MVP requirements have either demonstrated behavior or evidence-backed platform limitations; the core private/shared inventory workflow is proven; exact-head review and repository/release gates pass; the authorized package can be installed and discovered without credentials.
 
-- [ ] Automated hardening and two-account acceptance complete.
+- [ ] Deterministic transport/signing adversarial coverage complete.
+- [ ] Credential/session concurrency and recovery adversarial coverage complete.
+- [ ] Query, pagination, projection, change, sharing, subscription, and comparison adversarial coverage complete.
+- [ ] Privacy-safe release-candidate live acceptance complete for the configured profiles.
+- [ ] Human-gated account-switch, expiry, server-key, and exact-selector evidence completed or retained as explicit limitations.
+- [ ] README and public capability contracts reconciled with final evidence.
 - [x] Package-content and external-install gates complete.
-- [ ] Latest applicable governance and exact-head review complete.
+- [ ] Release-path byte identity and offline preflight gates complete.
+- [ ] Final applicable governance and exact-head review complete.
 - [ ] Owner-authorized npm bootstrap/publishing configured.
 - [ ] Released artifact integrity, provenance where eligible, and post-publish smoke verified.
 
@@ -716,6 +726,7 @@ Populate these during implementation. Do not replace `pending` with `verified` o
 | Zone-wide share discovery/mode | `get_share` returned the explicit `unavailable` outcome from both owner and participant views for the canonical inventory record | Treat share mode/role as unavailable through this backend unless a later live contract proves otherwise |
 | Native database subscriptions through selected API | Owner/private `GET subscriptions/list` returned one database subscription; shared subscription listing remains outside the documented enabled scopes | Retain the owner/private contract and its precise shared-scope limitation |
 | Minimum-field upstream projection | Verified live for exact record lookup and zone changes: `desiredKeys: []` returned a `fields` dictionary with zero entries while metadata remained available | Retain a content-free wire-contract regression and do not claim that unrelated endpoints share this behavior |
+| Public API-token probe | Verified live on 2026-09-14: Apple accepted the configured API token and returned the documented user-authentication challenge without authenticated database access or session mutation | Keep challenge classification narrow; it does not prove public record or zone permission |
 | User credential import and storage | Owner and participant sessions were separately imported, principal-bound, and repeatedly rotated during live reads on 2026-09-14 without entering uncertain state; restarted installed-MCP probes repeated owner/private and participant/shared access with certain rotation on 2026-09-14; synthetic account-switch coverage now preserves the prior binding and makes the rotated slot unusable until explicit reauthentication | Repeat the live account-switch and expiry cases during release acceptance |
 | Query/date/number/error wire contracts | Synthetic fixtures and bounded projections implemented; live wire verification pending | Resolve provider differences during live acceptance without weakening the closed registry |
 | Runtime/platform support | Node 24+ with a POSIX-only credential-store claim; local Node 25 package gate passes | Add other platforms only with their own credential-store evidence |

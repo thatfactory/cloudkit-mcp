@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { safeError, sanitizeUnknownError } from "./errors.js";
 import type { DiagnosticService, QueryFilter, ViewInput, ZoneInput } from "./diagnostics/service.js";
 
-export const VERSION = "0.1.0";
+const packageDocument = createRequire(import.meta.url)("../package.json") as { version: string };
+export const VERSION = packageDocument.version;
 
 const viewSchema = z.object({ profileId: z.string().min(1).max(255), scope: z.enum(["public", "private", "shared"]) }).strict();
 const zoneSchema = z.union([z.object({ handle: z.string().min(1).max(2048) }).strict(), z.object({ zoneName: z.string().min(1).max(255), ownerRecordName: z.string().min(1).max(1024).optional() }).strict()]);
