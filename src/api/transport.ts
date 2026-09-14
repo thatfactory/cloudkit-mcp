@@ -1,5 +1,5 @@
 import { TextDecoder } from "node:util";
-import { safeError, type SafeError } from "../errors.js";
+import { CloudKitMCPError, safeError, type SafeError } from "../errors.js";
 import type { AuthenticationMode, DatabaseScope } from "../domain/types.js";
 import { operationPolicy, type OperationId } from "./operations.js";
 import { signServerKeyRequest, type ServerKeyCredential } from "./signing.js";
@@ -109,7 +109,7 @@ export class CloudKitTransport {
           nextStep: "Verify the fixed CloudKit endpoint and authentication configuration.",
         });
       }
-      const bytes = await readBoundedBody(response, this.maximumResponseBytes, controller.signal);
+      const bytes = await readBoundedBody(response, this.maximumResponseBytes, controller.signal, credential.mode === "web-user", parentSignal);
       const parsed = parseJson(bytes, credential.mode === "web-user");
       const replacement = extractReplacementToken(response, parsed);
       const apiTokenAuthenticationChallenge = operationId === "probeCurrentUser"
@@ -141,7 +141,7 @@ function isAuthenticationChallenge(value: unknown): boolean {
 /** Small cancellable semaphore with a bounded pending queue. */
 class Semaphore {
   #active = 0;
-  readonly #queue: Array<{ readonly resolve: (release: () => void) => void; readonly reject: (error: unknown) => void; readonly signal?: AbortSignal }> = [];
+  readonly #queue: Array<{ readonly resolve: (release: () => void) => void; readonly reject: (error: unknown) => void; readonly signal?: AbortSignal; abort?: () => void }> = [];
 
   constructor(private readonly maximumActive: number, private readonly maximumPending: number) {}
 
@@ -153,15 +153,17 @@ class Semaphore {
     }
     if (this.#queue.length >= this.maximumPending) throw queueError("queueExhausted", "The CloudKit request queue is full.", true);
     return new Promise((resolvePromise, reject) => {
-      const entry = { resolve: resolvePromise, reject, ...(signal ? { signal } : {}) };
+      const entry: { resolve: (release: () => void) => void; reject: (error: unknown) => void; signal?: AbortSignal; abort?: () => void } = { resolve: resolvePromise, reject, ...(signal ? { signal } : {}) };
       this.#queue.push(entry);
-      signal?.addEventListener("abort", () => {
+      const abort = (): void => {
         const index = this.#queue.indexOf(entry);
         if (index >= 0) {
           this.#queue.splice(index, 1);
           reject(queueError("cancelled", "The queued CloudKit read was cancelled.", false));
         }
-      }, { once: true });
+      };
+      entry.abort = abort;
+      signal?.addEventListener("abort", abort, { once: true });
     });
   }
 
@@ -171,7 +173,10 @@ class Semaphore {
       if (released) return;
       released = true;
       const next = this.#queue.shift();
-      if (next) next.resolve(this.#releaseFunction());
+      if (next) {
+        if (next.signal && next.abort) next.signal.removeEventListener("abort", next.abort);
+        next.resolve(this.#releaseFunction());
+      }
       else this.#active -= 1;
     };
   }
@@ -222,24 +227,32 @@ function buildURL(pathTemplate: string, context: TransportContext, credential: T
   return url;
 }
 
-async function readBoundedBody(response: Response, maximumBytes: number, signal: AbortSignal): Promise<Uint8Array> {
+async function readBoundedBody(response: Response, maximumBytes: number, signal: AbortSignal, rotatingSession: boolean, parentSignal?: AbortSignal): Promise<Uint8Array> {
   const reader = response.body?.getReader();
   if (!reader) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  const abort = (): void => { void reader.cancel(signal.reason).catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
   try {
     while (true) {
-      if (signal.aborted) throw new Error("aborted");
+      if (signal.aborted) throw bodyReadAbort(parentSignal?.aborted === true, rotatingSession);
       const { done, value } = await reader.read();
+      if (signal.aborted) throw bodyReadAbort(parentSignal?.aborted === true, rotatingSession);
       if (done) break;
       total += value.byteLength;
       if (total > maximumBytes) {
         await reader.cancel();
-        throw safeError({ code: "responseBoundExceeded", message: "CloudKit returned more data than the configured response bound.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Narrow the request or reduce the page size." });
+        throw safeError({ code: "responseBoundExceeded", message: "CloudKit returned more data than the configured response bound.", execution: "completed", sessionEffect: rotatingSession ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: "Narrow the request or reduce the page size." });
       }
       chunks.push(value);
     }
+  } catch (error) {
+    if (error instanceof CloudKitMCPError) throw error;
+    if (signal.aborted) throw bodyReadAbort(parentSignal?.aborted === true, rotatingSession);
+    throw safeError({ code: "malformedResponse", message: "CloudKit ended the response body unexpectedly.", execution: "uncertain", sessionEffect: rotatingSession ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: rotatingSession ? "Reauthenticate this credential slot before another request." : "Inspect privacy-safe diagnostics and provider status." });
   } finally {
+    signal.removeEventListener("abort", abort);
     reader.releaseLock();
   }
   const output = new Uint8Array(total);
@@ -249,6 +262,18 @@ async function readBoundedBody(response: Response, maximumBytes: number, signal:
     offset += chunk.byteLength;
   }
   return output;
+}
+
+function bodyReadAbort(cancelled: boolean, rotatingSession: boolean): CloudKitMCPError {
+  return safeError({
+    code: cancelled ? "cancelled" : "timeout",
+    message: cancelled ? "The CloudKit response read was cancelled." : "The CloudKit response did not complete before the deadline.",
+    execution: "uncertain",
+    sessionEffect: rotatingSession ? "uncertain" : "unchanged",
+    retryable: false,
+    retryConditions: [],
+    nextStep: rotatingSession ? "Reauthenticate this credential slot before another request." : "Issue a new request only if the diagnostic is still required.",
+  });
 }
 
 function parseJson(bytes: Uint8Array, rotatingSession: boolean): unknown {
@@ -273,6 +298,6 @@ function extractReplacementToken(response: Response, body: unknown): string | un
 function classifyHttpError(status: number, mode: AuthenticationMode, replacementReceived: boolean) {
   if (status === 401) return safeError({ code: "authenticationExpired", message: "CloudKit rejected the configured authentication.", execution: "completed", sessionEffect: mode === "web-user" && !replacementReceived ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: "Reauthenticate the selected credential slot." });
   if (status === 403) return safeError({ code: "permissionDenied", message: "The authenticated principal is not permitted to perform this read in the selected view.", execution: "completed", sessionEffect: mode === "web-user" && !replacementReceived ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: "Verify the profile scope and CloudKit sharing permission without changing credentials automatically." });
-  if (status === 429) return safeError({ code: "rateLimited", message: "CloudKit rate-limited the read.", execution: "completed", sessionEffect: mode === "web-user" && !replacementReceived ? "uncertain" : "unchanged", retryable: mode !== "web-user", retryConditions: mode === "web-user" ? [] : ["A verified Retry-After value fits the remaining deadline."], nextStep: mode === "web-user" ? "Reauthenticate before retrying because token rotation is not established." : "Retry once after the verified provider delay." });
+  if (status === 429) return safeError({ code: "rateLimited", message: "CloudKit rate-limited the read.", execution: "completed", sessionEffect: mode === "web-user" && !replacementReceived ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: mode === "web-user" ? "Reauthenticate before issuing a new request because token rotation is not established." : "Issue a new request only after a separately verified provider delay and while the diagnostic is still required." });
   return safeError({ code: "partialFailure", message: "CloudKit returned a provider failure without safe detail disclosure.", execution: "completed", sessionEffect: mode === "web-user" && !replacementReceived ? "uncertain" : "unchanged", retryable: false, retryConditions: [], nextStep: "Inspect privacy-safe status diagnostics and narrow the operation." });
 }
