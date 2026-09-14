@@ -13,6 +13,8 @@ export interface ReleaseArtifactManifest {
 function hashes(path: string) { const bytes = readFileSync(path); return { size: bytes.byteLength, sha1: createHash("sha1").update(bytes).digest("hex"), integritySha512: `sha512-${createHash("sha512").update(bytes).digest("base64")}` }; }
 
 export function createReleaseArtifact(input: { readonly cwd: string; readonly destination: string; readonly tag: string; readonly sourceSha: string }): ReleaseArtifactManifest {
+  const git = (...args: readonly string[]) => execFileSync("git", args, { cwd: input.cwd, encoding: "utf8" }).trim();
+  if (git("rev-parse", "HEAD") !== input.sourceSha || git("status", "--porcelain", "--untracked-files=no") !== "") throw new Error("release artifact source identity mismatch");
   mkdirSync(input.destination, { recursive: true });
   if (readdirSync(input.destination).length !== 0) throw new Error("release artifact destination must be empty");
   const output = execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", input.destination], { cwd: input.cwd, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });

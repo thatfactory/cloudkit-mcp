@@ -8,7 +8,7 @@ export function verifyReleaseIdentity(input: ReleasePreflightInput): void {
   const cwd = input.cwd ?? process.cwd();
   if (!/^[0-9A-Za-z._-]+$/.test(input.tag) || !/^[0-9a-f]{40}$/.test(input.eventSha)) throw new Error("invalid release identity input");
   const packageDocument = JSON.parse(readFileSync(`${cwd}/package.json`, "utf8")) as { name?: string; version?: string; repository?: { url?: string } };
-  if (packageDocument.name !== "@thatfactory/cloudkit-mcp" || !packageDocument.repository?.url?.includes("github.com/thatfactory/cloudkit-mcp")) throw new Error("unexpected package repository identity");
+  if (packageDocument.name !== "@thatfactory/cloudkit-mcp" || !new Set(["git+https://github.com/thatfactory/cloudkit-mcp.git", "https://github.com/thatfactory/cloudkit-mcp.git", "git@github.com:thatfactory/cloudkit-mcp.git"]).has(packageDocument.repository?.url ?? "")) throw new Error("unexpected package repository identity");
   if (packageDocument.version !== input.tag) throw new Error("release tag does not match package version");
   const git = (...args: readonly string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
   const tagCommit = git("rev-parse", "--verify", `${input.tag}^{commit}`);

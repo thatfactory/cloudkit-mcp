@@ -30,7 +30,8 @@
     "smoke": "node scripts/pack-smoke.mjs",
     "release:preflight": "node --import tsx scripts/release-preflight.ts",
     "release:artifact": "node --import tsx scripts/release-artifact.ts",
-    "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke"
+    "release:offline": "node scripts/release-offline-smoke.mjs",
+    "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke && npm run release:offline"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

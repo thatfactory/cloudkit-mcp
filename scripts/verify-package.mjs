@@ -10,11 +10,15 @@ let report;
 let temporary;
 if (tarballIndex >= 0) {
   const tarball = resolve(process.argv[tarballIndex + 1]); temporary = await mkdtemp(join(tmpdir(), "cloudkit-package-verify-"));
-  await execute("tar", ["-xzf", tarball, "-C", temporary]);
   const { stdout } = await execute("tar", ["-tzf", tarball]);
-  report = { files: stdout.trim().split("\n").filter((path) => path && !path.endsWith("/")).map((path) => ({ path: path.replace(/^package\//, "") })) };
-  const packaged = JSON.parse(await readFile(join(temporary, "package", "package.json"), "utf8"));
-  if (packaged.name !== "@thatfactory/cloudkit-mcp" || typeof packaged.version !== "string") throw new Error("packaged identity mismatch");
+  const entries = stdout.trim().split("\n").filter(Boolean);
+  if (entries.some((path) => !path.startsWith("package/") || path.startsWith("/") || path.split("/").includes(".."))) throw new Error("unsafe package archive path");
+  try {
+    await execute("tar", ["-xzf", tarball, "-C", temporary]);
+    report = { files: entries.filter((path) => !path.endsWith("/")).map((path) => ({ path: path.replace(/^package\//, "") })) };
+    const packaged = JSON.parse(await readFile(join(temporary, "package", "package.json"), "utf8"));
+    if (packaged.name !== "@thatfactory/cloudkit-mcp" || typeof packaged.version !== "string") throw new Error("packaged identity mismatch");
+  } finally { await rm(temporary, { recursive: true, force: true }); temporary = undefined; }
 } else {
   const { stdout } = await execute("npm", ["pack", "--json", "--dry-run", "--ignore-scripts"], { cwd: new URL("..", import.meta.url) }); report = JSON.parse(stdout)[0];
 }
@@ -25,4 +29,3 @@ for (const file of report.files) {
   if (/\.map$/.test(file.path) || /(?<!\.d)\.ts$/.test(file.path) || /(?:^|\/)(?:fixtures?|contracts?|tests?)(?:\/|$)/i.test(file.path)) throw new Error(`unsafe package file: ${file.path}`);
 }
 for (const required of ["dist/index.js", "resources/capabilities.json", "package.json", "README.md", "LICENSE"]) if (!report.files.some((file) => file.path === required)) throw new Error(`missing package file: ${required}`);
-if (temporary) await rm(temporary, { recursive: true, force: true });

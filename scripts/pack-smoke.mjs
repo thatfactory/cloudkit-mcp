@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
@@ -10,7 +11,7 @@ const temporary = await mkdtemp(join(tmpdir(), "cloudkit-mcp-smoke-"));
 try {
   const tarballIndex = process.argv.indexOf("--tarball");
   const suppliedTarball = tarballIndex >= 0 ? process.argv[tarballIndex + 1] : undefined;
-  const tarball = suppliedTarball ? new URL(`file://${resolve(suppliedTarball)}`) : await (async () => { const { stdout } = await execute("npm", ["pack", "--json"], { cwd: root, maxBuffer: 4 * 1024 * 1024 }); const report = JSON.parse(stdout)[0]; return new URL(`../${report.filename}`, import.meta.url); })();
+  const tarball = suppliedTarball ? pathToFileURL(resolve(suppliedTarball)) : await (async () => { const { stdout } = await execute("npm", ["pack", "--json"], { cwd: root, maxBuffer: 4 * 1024 * 1024 }); const report = JSON.parse(stdout)[0]; return new URL(`../${report.filename}`, import.meta.url); })();
   await execute("npm", ["init", "--yes"], { cwd: temporary });
   await execute("npm", ["install", tarball.pathname, "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", ...(suppliedTarball ? ["--offline"] : [])], { cwd: temporary });
   const binary = join(temporary, "node_modules", ".bin", "cloudkit-mcp");

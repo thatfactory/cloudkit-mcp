@@ -12,8 +12,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Resolve immutable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Resolve trusted release identity
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          case "$RELEASE_TAG" in ''|*[!0-9A-Za-z._-]*) exit 1 ;; esac
+          read -r OBJECT_SHA OBJECT_TYPE < <(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object | [.sha, .type] | @tsv')
+          if [ "$OBJECT_TYPE" = tag ]; then
+            read -r OBJECT_SHA OBJECT_TYPE < <(gh api "repos/$GITHUB_REPOSITORY/git/tags/$OBJECT_SHA" --jq '.object | [.sha, .type] | @tsv')
+          fi
+          test "$OBJECT_TYPE" = commit
+          test "$OBJECT_SHA" = "$GITHUB_SHA"
+          STATUS="$(gh api "repos/$GITHUB_REPOSITORY/compare/$OBJECT_SHA...main" --jq .status)"
+          test "$STATUS" = identical || test "$STATUS" = ahead
+          test "${{ github.event.release.draft }}" = false
+          test "${{ github.event.release.prerelease }}" = false
+          echo "sha=$OBJECT_SHA" >> "$GITHUB_OUTPUT"
+
   publish:
-    if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm-publish
@@ -23,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ needs.preflight.outputs.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
@@ -31,11 +59,6 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
-      - name: Verify immutable release identity
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          node --import tsx scripts/release-preflight.ts --tag "$RELEASE_TAG" --event-sha "$GITHUB_SHA" --main-ref origin/main
       - run: npm run check
       - name: Verify supported npm trusted-publishing client
         run: |
