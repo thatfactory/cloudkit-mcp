@@ -56,7 +56,7 @@ test("synthetic contracts exercise the complete read-only diagnostic service", a
   assert.equal((await service.getZone(publicView, { handle: zones.data[0]?.handle ?? "" })).data.outcome, "present");
   assert.equal((await service.getRecords(ownerView, zone, ["record-a"])).data[0]?.outcome, "present");
   assert.deepEqual((await service.readRecordFields(ownerView, zone, ["record-a"], ["title"])).data[0]?.fields?.title, { state: "returned", value: "synthetic title" });
-  assert.equal((await service.queryRecords(ownerView, zone, "Entry", [{ fieldName: "entryID", comparator: "EQUALS", fieldValue: "synthetic" }], 10)).data.records.length, 1);
+  assert.equal((await service.queryRecords(ownerView, zone, "Entry", [{ fieldName: "entryID", comparator: "EQUALS", fieldValue: { kind: "string", value: "synthetic" } }], 10)).data.records.length, 1);
   const share = await service.getShare(ownerView, zone, "record-a"); assert.equal(share.data.mode, "zoneWide"); assert.equal(JSON.stringify(share).includes("must-not-escape"), false);
   assert.equal((await service.listSubscriptions(ownerView)).data.subscriptions[0]?.type, "zone");
   const databaseChanges = await service.getDatabaseChanges(ownerView, "beginning"); assert.equal(databaseChanges.data.changedZones.length, 1); assert.ok(databaseChanges.data.continuationHandle); assert.equal(databaseChanges.data.moreComing, false);

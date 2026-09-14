@@ -12,6 +12,16 @@ const viewSchema = z.object({ profileId: z.string().min(1).max(255), scope: z.en
 const zoneSchema = z.union([z.object({ handle: z.string().min(1).max(2048) }).strict(), z.object({ zoneName: z.string().min(1).max(255), ownerRecordName: z.string().min(1).max(1024).optional() }).strict()]);
 const recordNamesSchema = z.array(z.string().min(1).max(1024)).min(1).max(20);
 const fieldsSchema = z.array(z.string().min(1).max(255)).min(1).max(10);
+const queryScalarSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("string"), value: z.string().max(4096) }).strict(),
+  z.object({ kind: z.literal("boolean"), value: z.boolean() }).strict(),
+  z.object({ kind: z.literal("number"), value: z.number().finite().refine((value) => !Number.isInteger(value) || Number.isSafeInteger(value), "Integer query values must be safely representable.") }).strict(),
+  z.object({ kind: z.literal("timestamp"), value: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/) }).strict(),
+]);
+const queryValueSchema = z.union([
+  queryScalarSchema,
+  z.object({ kind: z.literal("list"), values: z.array(queryScalarSchema).min(1).max(100) }).strict(),
+]);
 
 /** Creates a side-effect-free MCP server with injected diagnostic behavior. */
 export function createServer(service: DiagnosticService): McpServer {
@@ -26,7 +36,7 @@ export function createServer(service: DiagnosticService): McpServer {
     view: viewSchema,
     zone: zoneSchema,
     recordType: z.string().min(1).max(255),
-    filters: z.array(z.object({ fieldName: z.string().min(1).max(255), comparator: z.enum(["EQUALS", "NOT_EQUALS", "LESS_THAN", "LESS_THAN_OR_EQUALS", "GREATER_THAN", "GREATER_THAN_OR_EQUALS", "IN"]), fieldValue: z.unknown() }).strict()).max(10),
+    filters: z.array(z.object({ fieldName: z.string().min(1).max(255), comparator: z.enum(["EQUALS", "NOT_EQUALS", "LESS_THAN", "LESS_THAN_OR_EQUALS", "GREATER_THAN", "GREATER_THAN_OR_EQUALS", "IN"]), fieldValue: queryValueSchema }).strict()).max(10),
     limit: z.number().int().min(1).max(100).default(50),
     continuationHandle: z.string().max(2048).optional(),
   }, async ({ view, zone, recordType, filters, limit, continuationHandle }) => service.queryRecords(view, zone, recordType, filters as readonly QueryFilter[], limit, continuationHandle));

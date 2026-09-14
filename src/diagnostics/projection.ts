@@ -30,14 +30,16 @@ export function projectRecord(
   registry: HandleRegistry,
   handleContext: HandleContext,
   requestedFields: readonly string[] = [],
+  payloadBudget: { remainingBytes: number } = { remainingBytes: 64 * 1024 },
 ): RecordObservation {
   const code = boundedString(wire.serverErrorCode, 128);
-  if (code) return { handle: registry.issue("record", handleContext, { zone, outcome: code }), outcome: classifyOutcome(code), deleted: "unknown" };
+  const observationContext = { ...handleContext, zoneOwner: zone.ownerRecordName, zoneName: zone.zoneName };
+  if (code) return { handle: registry.issueObservation("record", observationContext), outcome: classifyOutcome(code), deleted: "unknown" };
   const recordName = boundedString(wire.recordName, 1024);
   if (!recordName) {
-    return { handle: registry.issue("record", handleContext, { zone, outcome: "unknown" }), outcome: "unknown", deleted: "unknown" };
+    throw safeError({ code: "malformedResponse", message: "CloudKit returned a successful record item without a bounded record identity.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Inspect provider compatibility using privacy-safe contract diagnostics." });
   }
-  const handle = registry.issue("record", handleContext, { zone, recordName });
+  const handle = registry.issueObservation("record", observationContext);
   const recordType = boundedString(wire.recordType, 255);
   const changeTag = boundedString(wire.recordChangeTag, 1024);
   const createdAt = extractTimestamp(wire.created);
@@ -71,10 +73,15 @@ export function projectRecord(
       projected[field] = { state: "unavailable" };
       continue;
     }
+    if (requiresWholeFieldRedaction(rawValue)) {
+      projected[field] = { state: "redacted" };
+      continue;
+    }
     const value = safeJson(rawValue, 0);
     const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
     totalBytes += bytes;
-    if (bytes > 64 * 1024 || totalBytes > 64 * 1024) throw safeError({ code: "outputBoundExceeded", message: "Selected payload fields exceed the configured output bound.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Request fewer or smaller fields." });
+    if (bytes > 64 * 1024 || totalBytes > 64 * 1024 || bytes > payloadBudget.remainingBytes) throw safeError({ code: "outputBoundExceeded", message: "Selected payload fields exceed the configured output bound.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Request fewer or smaller fields." });
+    payloadBudget.remainingBytes -= bytes;
     projected[field] = { state: "returned", value };
   }
   return { ...output, fields: projected };
@@ -92,30 +99,38 @@ function boundedString(value: unknown, maximum: number): string | undefined {
 
 function extractTimestamp(value: unknown): string | undefined {
   if (typeof value !== "object" || value === null || !("timestamp" in value)) return undefined;
-  const timestamp = (value as { timestamp?: unknown }).timestamp;
-  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return undefined;
-  return new Date(timestamp).toISOString();
+  const rawTimestamp = (value as { timestamp?: unknown }).timestamp;
+  const timestamp = typeof rawTimestamp === "number"
+    ? rawTimestamp
+    : typeof rawTimestamp === "string" && /^-?\d+$/.test(rawTimestamp) ? Number(rawTimestamp) : Number.NaN;
+  if (!Number.isSafeInteger(timestamp)) return undefined;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 function safeJson(value: unknown, depth: number): SafeJsonValue {
-  if (depth > 6) throw new Error("payload nesting exceeds bound");
+  if (depth > 6) throw projectionBound("Selected payload nesting exceeds the configured bound.");
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "string") {
-    if (value.length > 4096 || /^(?:https?:\/\/|[A-Za-z0-9+/]{80,}={0,2}$)/.test(value)) return "[redacted]";
+    if (Buffer.byteLength(value, "utf8") > 4096) throw projectionBound("A selected payload string exceeds the configured bound.");
+    if (/^(?:https?:\/\/|[A-Za-z0-9+/]{80,}={0,2}$)/.test(value)) return "[redacted]";
     return value;
   }
-  if (typeof value === "number") return Number.isSafeInteger(value) || !Number.isInteger(value) ? value : String(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || Number.isInteger(value) && !Number.isSafeInteger(value)) throw malformedNumericValue();
+    return value;
+  }
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) {
-    if (value.length > 100) throw new Error("payload array exceeds bound");
+    if (value.length > 100) throw projectionBound("A selected payload array exceeds the configured bound.");
     return value.map((item) => safeJson(item, depth + 1));
   }
   if (typeof value === "object") {
     const input = value as Record<string, unknown>;
-    if ("downloadURL" in input || "fileChecksum" in input || "size" in input && "wrappingKey" in input) return "[asset omitted]";
+    if (isSensitiveStructure(input)) return "[redacted]";
     const output: Record<string, SafeJsonValue> = {};
     const entries = Object.entries(input);
-    if (entries.length > 50) throw new Error("payload object exceeds bound");
+    if (entries.length > 50) throw projectionBound("A selected payload object exceeds the configured bound.");
     for (const [key, item] of entries) {
       if (/token|password|secret|email|phone|url/i.test(key)) output[key] = "[redacted]";
       else output[key] = safeJson(item, depth + 1);
@@ -123,4 +138,23 @@ function safeJson(value: unknown, depth: number): SafeJsonValue {
     return output;
   }
   return "[unavailable]";
+}
+
+function requiresWholeFieldRedaction(value: unknown): boolean {
+  if (typeof value === "string") return /^(?:https?:\/\/|[A-Za-z0-9+/]{80,}={0,2}$)/.test(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && isSensitiveStructure(value as Record<string, unknown>);
+}
+
+function isSensitiveStructure(value: Record<string, unknown>): boolean {
+  return "downloadURL" in value || "fileChecksum" in value || "wrappingKey" in value
+    || "recordName" in value || "ownerRecordName" in value || "userRecordName" in value || "zoneID" in value;
+}
+
+function malformedNumericValue() {
+  return safeError({ code: "malformedResponse", message: "CloudKit returned a numeric payload value that cannot be represented without precision loss.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Keep numbersAsStrings enabled and inspect provider compatibility using privacy-safe diagnostics." });
+}
+
+function projectionBound(message: string) {
+  return safeError({ code: "outputBoundExceeded", message, execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Request fewer or smaller fields." });
 }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ProfilesDocument } from "../config/profiles.js";
 import { requireProfile } from "../config/profiles.js";
 import type { DatabaseScope, Profile, RecordObservation, ResultEnvelope, ZoneIdentity } from "../domain/types.js";
-import { safeError } from "../errors.js";
+import { CloudKitMCPError, safeError } from "../errors.js";
 import { SessionManager } from "../auth/session.js";
 import { HandleRegistry, type HandleContext } from "../state/handles.js";
 import { compareObservations } from "./comparison.js";
@@ -15,8 +15,18 @@ export interface ViewInput { readonly profileId: string; readonly scope: Databas
 /** Explicit owner-aware zone selector. */
 export type ZoneInput = { readonly handle: string; readonly zoneName?: never; readonly ownerRecordName?: never } | { readonly handle?: never; readonly zoneName: string; readonly ownerRecordName?: string | undefined };
 
+/** Deliberately narrow, JSON-safe query values supported by query_records. */
+export type QueryScalar =
+  | { readonly kind: "string"; readonly value: string }
+  | { readonly kind: "boolean"; readonly value: boolean }
+  | { readonly kind: "number"; readonly value: number }
+  | { readonly kind: "timestamp"; readonly value: string };
+export type QueryValue = QueryScalar | { readonly kind: "list"; readonly values: readonly QueryScalar[] };
+
 /** Small typed filter supported by query_records. */
-export interface QueryFilter { readonly fieldName: string; readonly comparator: "EQUALS" | "NOT_EQUALS" | "LESS_THAN" | "LESS_THAN_OR_EQUALS" | "GREATER_THAN" | "GREATER_THAN_OR_EQUALS" | "IN"; readonly fieldValue: unknown }
+export interface QueryFilter { readonly fieldName: string; readonly comparator: "EQUALS" | "NOT_EQUALS" | "LESS_THAN" | "LESS_THAN_OR_EQUALS" | "GREATER_THAN" | "GREATER_THAN_OR_EQUALS" | "IN"; readonly fieldValue: QueryValue }
+
+interface QueryCursor { readonly marker: string; readonly seenMarkerDigests: readonly string[] }
 
 /** Implements the account-relative read-only diagnostic surface. */
 export class DiagnosticService {
@@ -107,19 +117,23 @@ export class DiagnosticService {
     const profile = this.#profile(view);
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     if (!profile.recordPolicy.allowedTypes.includes(recordType)) throw invalidInput("The requested record type is not authorized by startup policy.");
-    if (filters.length > 10 || filters.some((filter) => !profile.recordPolicy.queryableFields.includes(filter.fieldName))) throw invalidInput("A query filter is not authorized by startup policy.");
+    if (filters.length > 10 || filters.some((filter) => !boundedIdentifier(filter.fieldName, 255) || !profile.recordPolicy.queryableFields.includes(filter.fieldName))) throw invalidInput("A query filter is not authorized by startup policy.");
+    for (const filter of filters) validateQueryFilter(filter);
     const normalizedLimit = requireLimit(limit);
     const digest = selectorDigest({ recordType, filters, zone, limit: normalizedLimit, desiredKeys: [] });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "queryRecords", digest, zone);
-    const marker = continuationHandle ? this.handles.resolve<string>(continuationHandle, context) : undefined;
-    const query = { recordType, filterBy: filters.map((filter) => ({ fieldName: filter.fieldName, comparator: filter.comparator, fieldValue: { value: filter.fieldValue } })) };
-    return this.#remote("queryRecords", view, { zoneID: zone, query, resultsLimit: normalizedLimit, desiredKeys: [], numbersAsStrings: true, ...(marker ? { continuationMarker: marker } : {}) }, (body, selectedProfile) => {
+    const cursor = continuationHandle ? this.handles.resolve<QueryCursor>(continuationHandle, context) : undefined;
+    const query = { recordType, filterBy: filters.map((filter) => ({ fieldName: filter.fieldName, comparator: filter.comparator, fieldValue: { value: queryWireValue(filter.fieldValue) } })) };
+    const result = await this.#remote("queryRecords", view, { zoneID: zone, query, resultsLimit: normalizedLimit, desiredKeys: [], numbersAsStrings: true, ...(cursor ? { continuationMarker: cursor.marker } : {}) }, (body, selectedProfile) => {
       const object = asObject(body);
-      const records = boundedArray(object.records, normalizedLimit).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest }));
-      const nextMarker = boundedString(object.continuationMarker, 8192);
-      if (marker !== undefined && nextMarker === marker) throw malformedContinuation();
-      return { records, page: { completeness: nextMarker ? "partial" : "completeForRequest", continuationHandle: nextMarker ? this.handles.issue("query", context, nextMarker) : undefined } };
+      const records = requireArray(object, "records", normalizedLimit).map((item) => projectRecord(asObject(item) as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest }));
+      const nextMarker = optionalContinuation(object, "continuationMarker");
+      const nextDigest = nextMarker ? selectorDigest(nextMarker) : undefined;
+      if (nextDigest && cursor?.seenMarkerDigests.includes(nextDigest)) throw malformedContinuation();
+      const seenMarkerDigests = nextDigest ? [...(cursor?.seenMarkerDigests ?? []), nextDigest].slice(-16) : [];
+      return { records, page: { completeness: nextMarker ? "partial" : "completeForRequest", continuationHandle: nextMarker ? this.handles.issue<QueryCursor>("query", context, { marker: nextMarker, seenMarkerDigests }) : undefined } };
     });
+    return { ...result, limitations: ["CloudKit query indexes update asynchronously; an empty result does not establish authoritative absence. Use exact-name lookup when possible."] };
   }
 
   /** Projects share topology attached to a proven record without returning share URLs or participant identities. */
@@ -225,10 +239,19 @@ export class DiagnosticService {
     const digest = selectorDigest({ zone, recordNames, fields });
     const handleContext = this.#handleContext(await this.sessions.currentView(profile, view.scope), "lookupRecords", digest, zone);
     return this.#remote("lookupRecords", view, { zoneID: zone, records: recordNames.map((recordName) => ({ recordName })), desiredKeys: fields, numbersAsStrings: true }, (body, selectedProfile) => {
-      const returned = boundedArray(asObject(body).records, recordNames.length);
-      return recordNames.map((_, index) => returned[index]
-        ? projectRecord(asObject(returned[index]) as WireRecord, selectedProfile, zone, this.handles, { ...handleContext, operation: "record" }, fields)
-        : { handle: this.handles.issue("record", { ...handleContext, operation: "record" }, { index }), outcome: "unknown" as const, deleted: "unknown" as const });
+      const returned = requireArray(asObject(body), "records", recordNames.length);
+      const requested = new Set(recordNames);
+      const byName = new Map<string, WireRecord>();
+      for (const item of returned) {
+        const wire = asObject(item) as WireRecord;
+        const recordName = boundedString(wire.recordName, 1024);
+        if (!recordName || !requested.has(recordName) || byName.has(recordName)) throw malformedRecordCollection();
+        byName.set(recordName, wire);
+      }
+      const payloadBudget = { remainingBytes: 64 * 1024 };
+      return recordNames.map((recordName, index) => byName.has(recordName)
+        ? projectRecord(byName.get(recordName)!, selectedProfile, zone, this.handles, { ...handleContext, operation: "record" }, fields, payloadBudget)
+        : { handle: this.handles.issueObservation("record", { ...handleContext, operation: `record-${index}` }), outcome: "unknown" as const, deleted: "unknown" as const });
     });
   }
 
@@ -236,8 +259,19 @@ export class DiagnosticService {
     const started = Date.now(); const requestId = randomUUID(); const profile = this.#profile(view);
     try {
       const result = await this.sessions.execute(profile, view.scope, operation, body);
+      const providerCode = boundedString(asObject(result.body).serverErrorCode, 128);
+      const expectedPublicChallenge = operation === "probeCurrentUser" && profile.authenticationMode === "api-token-public" && providerCode === "AUTHENTICATION_REQUIRED";
+      if (providerCode && !expectedPublicChallenge) throw providerError(providerCode, result.replacementWebAuthenticationToken !== undefined);
       const context = this.#handleContext(result.resolvedView, operation, selectorDigest(body));
-      const data = project(result.body, profile, context);
+      let data: T;
+      try {
+        data = project(result.body, profile, context);
+      } catch (error) {
+        if (result.replacementWebAuthenticationToken !== undefined && error instanceof CloudKitMCPError && error.details.sessionEffect === "unchanged") {
+          throw new CloudKitMCPError({ ...error.details, sessionEffect: "rotated" });
+        }
+        throw error;
+      }
       writeDiagnosticEvent({ event: "operationCompleted", requestId, operation, durationMilliseconds: Date.now() - started, ...(Array.isArray(data) ? { count: data.length } : {}) });
       return { status: "ok", execution: "completed", remoteDataEffect: "none", sessionEffect: result.replacementWebAuthenticationToken ? "rotated" : "unchanged", completeness: "completeForRequest", context: { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: view.scope, backend: profile.backend }, observedAt: this.now().toISOString(), limitations: [], data };
     } catch (error) {
@@ -285,6 +319,7 @@ function requireLimit(limit: number): number { if (!Number.isInteger(limit) || l
 function boundedIdentifier(value: string, maximum: number): boolean { return value.length > 0 && value.length <= maximum && !/[\u0000-\u001F\u007F]/.test(value); }
 function boundedString(value: unknown, maximum: number): string | undefined { return typeof value === "string" && value.length > 0 && value.length <= maximum ? value : undefined; }
 function boundedArray(value: unknown, maximum: number): readonly unknown[] { if (!Array.isArray(value)) return []; if (value.length > maximum) throw safeError({ code: "responseBoundExceeded", message: "CloudKit returned too many collection entries.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Narrow the selector or page size." }); return value; }
+function requireArray(object: Record<string, unknown>, key: string, maximum: number): readonly unknown[] { if (!Array.isArray(object[key])) throw malformedShape(); return boundedArray(object[key], maximum); }
 function asObject(value: unknown): Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function normalizeEnum(value: unknown, supported: readonly string[]): string { return typeof value === "string" && supported.includes(value) ? value : "unknown"; }
 function normalizeShareEnum(value: unknown): string {
@@ -296,3 +331,55 @@ function classifyProviderOutcome(code: string | undefined): "notFoundInView" | "
 function fieldValue(value: unknown): unknown { const object = asObject(value); return "value" in object ? object.value : undefined; }
 function invalidInput(message: string) { return safeError({ code: "invalidInput", message, execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Use the bounded schema and values returned by get_context or discovery." }); }
 function malformedContinuation() { return safeError({ code: "malformedResponse", message: "CloudKit repeated the active continuation marker.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Stop traversal and inspect provider compatibility before continuing." }); }
+function malformedShape() { return safeError({ code: "malformedResponse", message: "CloudKit returned a response with a missing or invalid required collection.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Inspect provider compatibility using privacy-safe contract diagnostics." }); }
+function malformedRecordCollection() { return safeError({ code: "malformedResponse", message: "CloudKit returned contradictory or unbound record identities.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Stop comparison and inspect provider compatibility using privacy-safe contract diagnostics." }); }
+
+function optionalContinuation(object: Record<string, unknown>, key: string): string | undefined {
+  if (!(key in object) || object[key] === null) return undefined;
+  const marker = boundedString(object[key], 8192);
+  if (!marker) throw malformedContinuation();
+  return marker;
+}
+
+function validateQueryFilter(filter: QueryFilter): void {
+  const value = filter.fieldValue;
+  if (filter.comparator === "IN") {
+    if (value.kind !== "list" || value.values.length === 0 || value.values.length > 100) throw invalidInput("IN query filters require between one and one hundred bounded homogeneous scalar values.");
+    const kinds = new Set(value.values.map((item) => item.kind));
+    if (kinds.size !== 1) throw invalidInput("IN query filters require between one and one hundred bounded homogeneous scalar values.");
+    for (const item of value.values) validateQueryScalar(item);
+    return;
+  }
+  if (value.kind === "list") throw invalidInput("Only IN query filters accept list values.");
+  validateQueryScalar(value);
+}
+
+function validateQueryScalar(value: QueryScalar): void {
+  if (value.kind === "string" && Buffer.byteLength(value.value, "utf8") <= 4096) return;
+  if (value.kind === "boolean") return;
+  if (value.kind === "number" && Number.isFinite(value.value) && (!Number.isInteger(value.value) || Number.isSafeInteger(value.value))) return;
+  if (value.kind === "timestamp" && normalizeTimestamp(value.value) !== undefined) return;
+  throw invalidInput("Query filters require a bounded string, boolean, finite safe number, or valid timestamp value.");
+}
+
+function queryWireValue(value: QueryValue): unknown {
+  if (value.kind === "list") return value.values.map(queryWireValue);
+  return value.kind === "timestamp" ? normalizeTimestamp(value.value) : value.value;
+}
+
+function normalizeTimestamp(value: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) return undefined;
+  const timestamp = Date.parse(value);
+  if (!Number.isSafeInteger(timestamp)) return undefined;
+  const normalized = value.length === 20 ? value.replace("Z", ".000Z") : value;
+  return new Date(timestamp).toISOString() === normalized ? timestamp : undefined;
+}
+
+function providerError(code: string, rotated: boolean) {
+  const sessionEffect = rotated ? "rotated" as const : "unchanged" as const;
+  if (code === "NOT_FOUND" || code === "ZONE_NOT_FOUND") return safeError({ code: "notFoundInView", message: "CloudKit did not find the selected resource in this view.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Verify the exact view and owner-aware selector." });
+  if (code === "ACCESS_DENIED") return safeError({ code: "permissionDenied", message: "CloudKit denied access to the selected resource.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Verify the selected account, scope, and share permissions." });
+  if (code === "AUTHENTICATION_REQUIRED" || code === "AUTHENTICATION_FAILED") return safeError({ code: "authenticationExpired", message: "CloudKit rejected the authenticated session.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Reauthenticate the selected profile before another request." });
+  if (code === "THROTTLED") return safeError({ code: "rateLimited", message: "CloudKit rate-limited the read.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Retry only after provider guidance and within a fresh diagnostic deadline." });
+  return safeError({ code: "partialFailure", message: "CloudKit returned a provider failure without safe detail disclosure.", execution: "completed", sessionEffect, retryable: false, retryConditions: [], nextStep: "Inspect privacy-safe status diagnostics and narrow the operation." });
+}
