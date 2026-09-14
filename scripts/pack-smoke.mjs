@@ -15,7 +15,8 @@ try {
   await execute("npm", ["install", tarball.pathname, "--omit=dev", "--ignore-scripts"], { cwd: temporary });
   const binary = join(temporary, "node_modules", ".bin", "cloudkit-mcp");
   const version = await execute(binary, ["--version"], { cwd: temporary });
-  if (version.stdout.trim() !== "0.1.0") throw new Error("external binary version mismatch");
+  const installedPackage = JSON.parse(await readFile(join(temporary, "node_modules", "@thatfactory", "cloudkit-mcp", "package.json"), "utf8"));
+  if (version.stdout.trim() !== installedPackage.version) throw new Error("external binary version mismatch");
   const help = await execute(binary, ["--help"], { cwd: temporary });
   if (!help.stdout.includes("The server is read-only")) throw new Error("external binary help mismatch");
   const capabilities = JSON.parse(await readFile(join(temporary, "node_modules", "@thatfactory", "cloudkit-mcp", "resources", "capabilities.json"), "utf8"));

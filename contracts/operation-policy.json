@@ -8,10 +8,12 @@
       "method": "GET",
       "path": "public/users/caller",
       "effect": "read",
-      "credentials": ["apiTokenWebUser"],
+      "credentials": ["apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private", "shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "verified",
+      "liveVerifiedScopes": ["public", "private", "shared"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "listZones",
@@ -21,8 +23,10 @@
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private"],
       "unverifiedScopes": ["shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["private"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "lookupZones",
@@ -32,8 +36,10 @@
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private"],
       "unverifiedScopes": ["shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["private"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "lookupRecords",
@@ -42,8 +48,10 @@
       "effect": "read",
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private", "shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["private", "shared"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "queryRecords",
@@ -52,8 +60,9 @@
       "effect": "read",
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private", "shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "notVerified",
+      "liveVerifiedScopes": []
     },
     {
       "id": "listSubscriptions",
@@ -63,8 +72,10 @@
       "credentials": ["serverKey", "apiTokenPublic", "apiTokenWebUser"],
       "documentedScopes": ["public", "private"],
       "unverifiedScopes": ["shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["private"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "getDatabaseChanges",
@@ -73,8 +84,10 @@
       "effect": "read",
       "credentials": ["apiTokenWebUser"],
       "documentedScopes": ["private", "shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["shared"],
+      "lastObservedAt": "2026-09-14"
     },
     {
       "id": "getZoneChanges",
@@ -83,8 +96,10 @@
       "effect": "read",
       "credentials": ["apiTokenWebUser"],
       "documentedScopes": ["private", "shared"],
-      "implementationStatus": "pending",
-      "liveVerificationStatus": "notVerified"
+      "implementationStatus": "implemented",
+      "liveVerificationStatus": "partiallyVerified",
+      "liveVerifiedScopes": ["shared"],
+      "lastObservedAt": "2026-09-14"
     }
   ],
   "invariants": {

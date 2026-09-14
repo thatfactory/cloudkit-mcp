@@ -5,9 +5,9 @@
   "remoteDataEffect": "none",
   "backend": "cloudkit-web-services",
   "authentication": {
-    "serverKey": { "scopes": ["public"], "implemented": true, "liveVerified": false },
-    "apiTokenPublic": { "scopes": ["public"], "implemented": true, "liveVerified": false },
-    "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerified": false, "rotation": "single-request-transaction" }
+    "serverKey": { "scopes": ["public"], "implemented": true, "liveVerifiedScopes": [] },
+    "apiTokenPublic": { "scopes": ["public"], "implemented": true, "liveVerifiedScopes": ["public"] },
+    "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerifiedScopes": ["private", "shared"], "rotation": "single-request-transaction" }
   },
   "tools": [
     "get_context",
@@ -24,7 +24,9 @@
     "compare_views"
   ],
   "limitations": [
-    "No operation has live CloudKit verification in the published source baseline.",
+    "Live evidence is operation- and scope-specific; it does not imply full container access.",
+    "Server-key signing is implemented and synthetically verified but has not been live verified.",
+    "Query wire behavior and provider error/retry variants have not been live verified.",
     "Shared-zone listing and lookup remain disabled until separately live verified.",
     "Shared subscription listing remains disabled until separately live verified.",
     "Authentication login/callback automation is not implemented; auth import accepts an already-acquired token through a hidden terminal prompt.",
