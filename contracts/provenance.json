@@ -87,11 +87,14 @@
       "owner private database subscription listing"
     ],
     "limitations": [
+      "Release-candidate acceptance is complete only for the enabled metadata-only web-user surface.",
+      "The acceptance profiles authorized no record types, queryable fields, or payload fields; query and payload paths were not live exercised and no private selector was inferred.",
       "Generic shared zone listing remains unverified and is disabled.",
       "Shared subscription listing is not established by the selected API documentation and is disabled.",
       "Share topology returned an explicit unavailable outcome for the verified record through both views.",
       "Query date, number, index-error, and pagination wire variants remain live-unverified.",
       "No server-key signing flow has been live-verified.",
+      "Deliberate live account-switch and expiry cases were not performed because they require human reauthentication; fail-closed behavior is synthetic-only.",
       "No mutation was performed."
     ]
   }

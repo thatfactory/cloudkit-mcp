@@ -35,8 +35,11 @@
   ],
   "limitations": [
     "Live evidence is operation- and scope-specific; it does not imply full container access.",
+    "Core release-candidate acceptance is complete for the enabled metadata-only web-user surface.",
+    "The release-acceptance profiles authorized no record types, queryable fields, or payload fields, so query and payload paths were not live exercised and no private selector was inferred.",
     "The public API-token live check proves the documented authentication challenge, not authenticated public database access.",
     "Server-key signing is implemented and synthetically verified but has not been live verified.",
+    "Deliberate live account-switch and expiry cases were not performed because they require human reauthentication; their fail-closed behavior is covered synthetically.",
     "Query wire behavior and provider error/retry variants have no live-verified scope.",
     "Canonical live share inspection returned unavailable through both verified views; topology availability is not claimed.",
     "Change feeds have live evidence in shared scope; private-scope change behavior remains live-unverified.",
