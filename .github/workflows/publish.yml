@@ -78,7 +78,27 @@ jobs:
           node scripts/verify-package.mjs --tarball "$TARBALL"
           node scripts/pack-smoke.mjs --tarball "$TARBALL"
           node --import tsx scripts/release-artifact.ts verify --destination "$RUNNER_TEMP/cloudkit-release" --tag "$RELEASE_TAG" --source-sha "$GITHUB_SHA"
+      - name: Reconcile an existing bootstrap publication
+        id: registry
+        env:
+          ARTIFACT_MANIFEST: ${{ runner.temp }}/cloudkit-release/release-artifact.json
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+          const manifest = JSON.parse(readFileSync(process.env.ARTIFACT_MANIFEST, "utf8"));
+          const url = `https://registry.npmjs.org/${encodeURIComponent(manifest.packageName)}/${encodeURIComponent(manifest.packageVersion)}`;
+          const response = await fetch(url, { redirect: "error" });
+          if (response.status === 404) {
+            appendFileSync(process.env.GITHUB_OUTPUT, "already-published=false\n");
+          } else {
+            if (!response.ok) throw new Error(`npm registry lookup failed with HTTP ${response.status}`);
+            const published = await response.json();
+            if (published?.dist?.integrity !== manifest.integritySha512) throw new Error("published bootstrap integrity does not match the inspected release artifact");
+            appendFileSync(process.env.GITHUB_OUTPUT, "already-published=true\n");
+          }
+          NODE
       - name: Publish the inspected artifact
+        if: steps.registry.outputs.already-published != 'true'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
