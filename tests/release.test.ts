@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { assertVersionUnpublished } from "../scripts/assert-unpublished-version.js";
 import { createReleaseArtifact, verifyReleaseArtifact } from "../scripts/release-artifact.js";
 import { verifyReleaseIdentity } from "../scripts/release-preflight.js";
 
@@ -15,10 +16,44 @@ test("publish workflow is release-only and publishes the reverified exact tarbal
   assert.match(workflow, /environment: npm-publish/); assert.match(workflow, /id-token: write/);
   assert.match(workflow, /preflight:[\s\S]*permissions:\n\s+contents: read/); assert.match(workflow, /needs: preflight/);
   assert.match(workflow, /git\/ref\/tags\/\$RELEASE_TAG/); assert.match(workflow, /OBJECT_SHA" = "\$GITHUB_SHA/); assert.match(workflow, /ref: \$\{\{ needs\.preflight\.outputs\.sha \}\}/); assert.match(workflow, /release-artifact\.ts create/);
-  assert.match(workflow, /Reconcile an existing bootstrap publication[\s\S]*response\.status === 404[\s\S]*published\?\.dist\?\.integrity !== manifest\.integritySha512/);
-  assert.match(workflow, /if: steps\.registry\.outputs\.already-published != 'true'/);
+  assert.match(workflow, /Require an unpublished version[\s\S]*assert-unpublished-version\.ts/);
+  assert.doesNotMatch(workflow, /already-published|dist\?\.integrity/);
   assert.match(workflow, /release-artifact\.ts verify[\s\S]*npm publish "\$TARBALL" --access public --provenance --ignore-scripts/);
   assert.doesNotMatch(workflow, /npm publish --access public/); assert.doesNotMatch(workflow, /NPM_TOKEN|NODE_AUTH_TOKEN/);
+});
+
+test("registry publication guard accepts only an exact 404", async () => {
+  const calls: Array<{ input: string; redirect: RequestRedirect | undefined }> = [];
+  const respond = (status: number): typeof fetch => (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    calls.push({ input: String(input), redirect: init?.redirect });
+    return new Response(null, { status });
+  }) as typeof fetch;
+  await assertVersionUnpublished({
+    packageName: "@thatfactory/cloudkit-mcp",
+    packageVersion: "0.1.1",
+    fetchImpl: respond(404),
+  });
+  assert.deepEqual(calls, [{
+    input: "https://registry.npmjs.org/%40thatfactory%2Fcloudkit-mcp/0.1.1",
+    redirect: "error",
+  }]);
+  for (const status of [200, 204, 401, 403, 429, 500]) {
+    await assert.rejects(
+      assertVersionUnpublished({
+        packageName: "@thatfactory/cloudkit-mcp",
+        packageVersion: "0.1.1",
+        fetchImpl: respond(status),
+      }),
+      status < 300 ? /already published/ : new RegExp(`HTTP ${status}`),
+    );
+  }
+  await assert.rejects(
+    assertVersionUnpublished({ packageName: "", packageVersion: "0.1.1", fetchImpl: respond(404) }),
+    /identity is missing/,
+  );
 });
 
 test("trusted workflow preflight rejects moved tags, non-main commits, and unpublished release state", async (context) => {
