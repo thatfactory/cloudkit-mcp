@@ -149,7 +149,7 @@ export class DiagnosticService {
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const referenceResult = await this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true }, (body) => exactLookupItem(body, recordName));
     const record = referenceResult.data;
-    if (!record) return { ...referenceResult, status: "unavailable" as const, completeness: "notEstablished" as const, limitations: ["The exact selected record was not returned in this view."], data: { outcome: "notFoundInView" as const } };
+    if (!record) return { ...referenceResult, status: "unavailable" as const, completeness: "notEstablished" as const, limitations: ["The exact selected record was omitted from the provider response."], data: { outcome: "unknown" as const } };
     const referenceError = boundedString(record.serverErrorCode, 128);
     if (referenceError) {
       return { ...referenceResult, status: "unavailable" as const, limitations: ["The selected record lookup returned a per-item provider error."], data: { outcome: classifyProviderOutcome(referenceError) } };
@@ -247,7 +247,15 @@ export class DiagnosticService {
       if (zoneError) {
         const errorZone = parseZone(zoneResult);
         if (errorZone.zoneName !== zone.zoneName || errorZone.ownerRecordName !== zone.ownerRecordName) throw malformedRecordCollection();
-        return { changes: [], errors: [{ zoneHandle: this.handles.issueObservation("zone-error", { ...context, operation: "zone-error", selectorDigest: "zone-change-error" }), outcome: classifyProviderOutcome(zoneError) }], coverage: cursor ? "sinceIssuedCursor" : "beginning", moreComing: false };
+        return {
+          changes: [],
+          errors: [{ zoneHandle: this.handles.issueObservation("zone-error", { ...context, operation: "zone-error", selectorDigest: "zone-change-error" }), outcome: classifyProviderOutcome(zoneError) }],
+          coverage: cursor ? "sinceIssuedCursor" : "beginning",
+          completion: "notEstablished" as const,
+          stopReason: "zoneError" as const,
+          continuationAvailable: cursor !== undefined,
+          ...(start.kind === "cursor" ? { continuationHandle: start.handle } : {}),
+        };
       }
       const observedZone = parseZone(zoneResult);
       if (observedZone.zoneName !== zone.zoneName || observedZone.ownerRecordName !== zone.ownerRecordName) throw malformedRecordCollection();
@@ -274,6 +282,8 @@ export class DiagnosticService {
     const leftProfile = this.#profile(left); const rightProfile = this.#profile(right);
     this.#preflight(leftProfile, left.scope, "lookupRecords"); this.#preflight(rightProfile, right.scope, "lookupRecords");
     if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
+    if (leftZoneInput.handle === undefined) requireExactZone(left.scope, leftZoneInput);
+    if (rightZoneInput.handle === undefined) requireExactZone(right.scope, rightZoneInput);
     const [leftZone, rightZone, leftIdentityBefore, rightIdentityBefore] = await Promise.all([
       this.#resolveZone(leftProfile, left.scope, leftZoneInput),
       this.#resolveZone(rightProfile, right.scope, rightZoneInput),
@@ -308,8 +318,8 @@ export class DiagnosticService {
     if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
     const profile = this.#profile(view);
     this.#preflight(profile, view.scope, "lookupRecords");
-    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     if (fields.some((field) => !profile.recordPolicy.readablePayloadFields.includes(field))) throw invalidInput("A requested payload field is not authorized by startup policy.");
+    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const digest = selectorDigest({ zone, recordNames, fields });
     const handleContext = this.#handleContext(await this.sessions.currentView(profile, view.scope), "lookupRecords", digest, zone);
     return this.#remote("lookupRecords", view, { zoneID: zone, records: recordNames.map((recordName) => ({ recordName })), desiredKeys: fields, numbersAsStrings: true }, (body, selectedProfile) => {

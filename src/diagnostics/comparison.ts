@@ -82,6 +82,16 @@ function compareRecord(
       nextStep: "Use two independently authenticated principals before interpreting this as an owner-versus-participant comparison.",
     };
   }
+  if (left?.outcome === "inaccessible" || left?.outcome === "unknown" || right?.outcome === "inaccessible" || right?.outcome === "unknown") {
+    return {
+      category: "inconclusive",
+      confidence: "low",
+      recordSelector: selector,
+      evidence: ["At least one view returned an inaccessible or unknown per-record observation."],
+      limitations,
+      nextStep: "Restore authorization or provider compatibility and repeat the exact lookup before interpreting visibility or absence.",
+    };
+  }
   if (left?.outcome === "present" && right?.outcome === "present") {
     const matching = left.changeTag !== undefined && left.changeTag === right.changeTag;
     return {
@@ -97,7 +107,7 @@ function compareRecord(
   }
   if (left?.outcome === "present" || right?.outcome === "present") {
     const other = left?.outcome === "present" ? right : left;
-    if (other === undefined || other.outcome === "unknown") {
+    if (other === undefined) {
       return {
         category: "inconclusive",
         confidence: "low",

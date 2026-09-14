@@ -91,6 +91,22 @@ test("zone changes validate zone identity, tombstones, required collections, and
   await assert.rejects(service.getZoneChanges(ownerView, zone, { kind: "beginning" }), hasCode("malformedResponse"));
 });
 
+test("zone-level errors preserve an issued cursor without claiming completion", async (context) => {
+  let call = 0;
+  const service = await makeService(context, () => call++ === 0
+    ? { zones: [{ zoneID: zone, records: [], syncToken: "zone-token", moreComing: false }] }
+    : { zones: [{ zoneID: zone, serverErrorCode: "ACCESS_DENIED" }] });
+  const first = await service.getZoneChanges(ownerView, zone, { kind: "beginning" });
+  const cursor = first.data.continuationHandle!;
+  const failed = await service.getZoneChanges(ownerView, zone, { kind: "cursor", handle: cursor });
+  assert.equal(failed.status, "partial");
+  assert.equal(failed.data.completion, "notEstablished");
+  assert.equal(failed.data.stopReason, "zoneError");
+  assert.equal(failed.data.continuationAvailable, true);
+  assert.equal(failed.data.continuationHandle, cursor);
+  assert.equal("moreComing" in failed.data, false);
+});
+
 test("missing share metadata remains canonically unavailable without fallback", async (context) => {
   let lookups = 0;
   const service = await makeService(context, () => { lookups += 1; return { records: [{ recordName: "root" }] }; });
@@ -189,6 +205,8 @@ test("unsupported change and shared zone lookup fail before missing credentials 
   const service = new DiagnosticService(profiles, new SessionManager(new CredentialStore(root), new CloudKitTransport(async () => { requests += 1; return new Response("{}"); })));
   await assert.rejects(service.getDatabaseChanges({ profileId: "public", scope: "public" }, { kind: "beginning" }), hasCode("authenticationRequired"));
   await assert.rejects(service.getZone(sharedView, { handle: "opaque-zone-handle" }), hasCode("unverifiedCapability"));
+  await assert.rejects(service.readRecordFields(sharedView, { handle: "opaque-zone-handle" }, ["record"], ["unauthorized"]), hasCode("invalidInput"));
+  await assert.rejects(service.compareViews(sharedView, sharedView, { zoneName: "Inventory" }, { zoneName: "Inventory" }, ["record"]), hasCode("invalidInput"));
   assert.equal(requests, 0);
 });
 
@@ -242,6 +260,14 @@ test("comparison keeps absent-plus-failed and both-failed observations inconclus
   privateFails = true;
   const bothFailed = await service.compareViews(ownerView, sharedView, zone, zone, ["record-a"]);
   assert.equal(bothFailed.conclusions[0]?.category, "inconclusive");
+});
+
+test("comparison treats per-item inaccessible and unknown outcomes as inconclusive", async (context) => {
+  for (const serverErrorCode of ["ACCESS_DENIED", "FUTURE_PROVIDER_ERROR"]) {
+    const service = await makeService(context, (url, body) => ({ records: (body as { records: Array<{ recordName: string }> }).records.map(({ recordName }) => url.pathname.includes("/private/") ? { recordName, recordChangeTag: "tag" } : { recordName, serverErrorCode }) }));
+    const result = await service.compareViews(ownerView, sharedView, zone, zone, ["record-a"]);
+    assert.equal(result.conclusions[0]?.category, "inconclusive");
+  }
 });
 
 test("comparison requires independently corresponding owner-aware zones", async (context) => {
