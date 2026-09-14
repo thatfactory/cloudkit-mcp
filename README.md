@@ -65,7 +65,7 @@ Use absolute paths when starting the server. There are no credential environment
 
 ## Authentication commands
 
-The profile file is non-secret policy: it names the CloudKit container and environment, selects allowed database scopes, and allowlists record types and fields. You create it once for the container you want to inspect.
+The profile file is non-secret policy: it names the CloudKit container and environment, selects allowed database scopes, and allowlists record types and fields. You create it once for the container you want to inspect. `id` is a local human-readable label used in MCP calls and CLI commands; it is not assigned by Apple and may be changed as long as references use the same value. `credentialRef` is the local secret-slot name and may match `id` for a simple one-profile setup.
 
 The `--credential-store` value is an absolute path to a private local directory managed by CloudKit MCP. It is not downloaded from Apple. `auth import` creates the directory with owner-only permissions and writes one credential slot per profile while reading secret values from hidden terminal prompts. Keep this directory outside the repository and do not synchronize it.
 
@@ -83,7 +83,9 @@ cloudkit-mcp auth status \
 
 `auth import` requires an interactive terminal and reads secrets with echo disabled. `auth remove` deletes only the chosen local slot; it does not claim to revoke the remote Apple credential.
 
-For a first live test, use an `api-token-public` profile with `allowedScopes: ["public"]`. Create the reusable API token in CloudKit Dashboard under the selected container's API Access page, then import it using the command above. Private and shared views require `web-user` and both that API token and a short-lived web-authentication token. This version imports an already-acquired web token but does not implement Apple's sign-in redirect or callback flow. Apple documents obtaining one through the authentication redirect flow or, from a signed-in native app, `CKFetchWebAuthTokenOperation`.
+For a first live test, use an `api-token-public` profile with `allowedScopes: ["public"]`. Create the reusable API token in CloudKit Dashboard under the selected container's API Access page, then import it using the command above. Calling `probe_access` with this profile validates the container, environment, and API token through Apple's documented authentication challenge without exposing its redirect URL. A successful token-only probe reports `apiTokenAccepted: true`, `userAuthenticationRequired: true`, and `accessible: false`; authenticated database access has not occurred yet.
+
+Private and shared views require `web-user` and both that API token and a short-lived web-authentication token. Some public operations may also require user authentication depending on the container and operation. This version imports an already-acquired web token but does not implement Apple's sign-in redirect or callback flow. Apple documents obtaining one through the authentication redirect flow or, from a signed-in native app, `CKFetchWebAuthTokenOperation`.
 
 After import, verify the safe local state without revealing the credential:
 
@@ -94,7 +96,7 @@ cloudkit-mcp auth status \
   --credential-store "/absolute/private/path/cloudkit-credentials"
 ```
 
-Then start the server with those same two paths and call `get_context`, `probe_access`, and `list_zones` from your MCP client. Begin with `get_context`: it is offline and confirms the loaded policy before any authentication or CloudKit request occurs.
+Then start the server with those same two paths and call `get_context` followed by `probe_access` from your MCP client. `get_context` is offline and confirms the loaded policy before any authentication or CloudKit request occurs. Continue to `list_zones` only after `probe_access` reports authenticated access; an API-token-only authentication challenge does not prove zone access.
 
 ## Codex setup
 

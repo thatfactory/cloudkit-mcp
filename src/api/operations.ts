@@ -29,7 +29,7 @@ const policies: Readonly<Record<OperationId, OperationPolicy>> = {
     method: "GET",
     path: "/{scope}/users/caller",
     effect: "read",
-    authenticationModes: ["web-user"],
+    authenticationModes: ["api-token-public", "web-user"],
     documentedScopes: ["public", "private", "shared"],
     unverifiedScopes: [],
     retryClass: "sessionTransactional",

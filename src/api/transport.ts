@@ -112,11 +112,15 @@ export class CloudKitTransport {
       const bytes = await readBoundedBody(response, this.maximumResponseBytes, controller.signal);
       const parsed = parseJson(bytes, credential.mode === "web-user");
       const replacement = extractReplacementToken(response, parsed);
+      const apiTokenAuthenticationChallenge = operationId === "probeCurrentUser"
+        && credential.mode === "api-token-public"
+        && response.status === 421
+        && isAuthenticationChallenge(parsed);
       return {
         body: parsed,
         status: response.status,
         ...(replacement === undefined ? {} : { replacementWebAuthenticationToken: replacement }),
-        ...(response.ok ? {} : { error: classifyHttpError(response.status, credential.mode, replacement !== undefined).toSafeObject() }),
+        ...(response.ok || apiTokenAuthenticationChallenge ? {} : { error: classifyHttpError(response.status, credential.mode, replacement !== undefined).toSafeObject() }),
       };
     } finally {
       clearTimeout(timer);
@@ -126,6 +130,12 @@ export class CloudKitTransport {
       release();
     }
   }
+}
+
+function isAuthenticationChallenge(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const object = value as Record<string, unknown>;
+  return object.serverErrorCode === "AUTHENTICATION_REQUIRED" && typeof object.redirectURL === "string" && object.redirectURL.length > 0;
 }
 
 /** Small cancellable semaphore with a bounded pending queue. */

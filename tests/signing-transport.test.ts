@@ -23,6 +23,13 @@ test("POST record reads remain allowed and use only the fixed origin", async () 
   assert.equal(observed?.searchParams.get("ckAPIToken"), "private-api-token");
 });
 
+test("public API-token probe accepts only a documented authentication challenge", async () => {
+  const transport = new CloudKitTransport(async () => new Response(JSON.stringify({ serverErrorCode: "AUTHENTICATION_REQUIRED", redirectURL: "https://icloud.example/sign-in" }), { status: 421 }));
+  const result = await transport.execute("probeCurrentUser", { containerId: "iCloud.com.example", environment: "development", scope: "public" }, { mode: "api-token-public", apiToken: "token" }, {});
+  assert.equal(result.status, 421);
+  assert.equal(result.error, undefined);
+});
+
 test("redirects are rejected and never followed", async () => {
   let redirect: RequestRedirect | undefined;
   const transport = new CloudKitTransport(async (_input, init) => { redirect = init?.redirect; return new Response("", { status: 302, headers: { location: "https://evil.example" } }); });
