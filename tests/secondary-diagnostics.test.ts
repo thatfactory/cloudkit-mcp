@@ -178,6 +178,47 @@ test("unverified operations fail before credential resolution", async (context) 
   assert.equal(requests, 0);
 });
 
+test("unsupported change and shared zone lookup fail before missing credentials are resolved", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-preflight-missing-"));
+  context.after(async () => rm(root, { recursive: true, force: true }));
+  let requests = 0;
+  const profiles = parseProfilesDocument({ schemaVersion: 1, profiles: [
+    { id: "public", containerId: "iCloud.com.example", environment: "development", backend: "web-services", authenticationMode: "api-token-public", credentialRef: "missing-public", allowedScopes: ["public"], recordPolicy: {} },
+    { id: "participant", containerId: "iCloud.com.example", environment: "development", backend: "web-services", authenticationMode: "web-user", credentialRef: "missing-shared", allowedScopes: ["shared"], recordPolicy: {} },
+  ] });
+  const service = new DiagnosticService(profiles, new SessionManager(new CredentialStore(root), new CloudKitTransport(async () => { requests += 1; return new Response("{}"); })));
+  await assert.rejects(service.getDatabaseChanges({ profileId: "public", scope: "public" }, { kind: "beginning" }), hasCode("authenticationRequired"));
+  await assert.rejects(service.getZone(sharedView, { handle: "opaque-zone-handle" }), hasCode("unverifiedCapability"));
+  assert.equal(requests, 0);
+});
+
+test("change-feed cancellation is safe before dispatch and uncertain after dispatch", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-change-cancel-"));
+  context.after(async () => rm(root, { recursive: true, force: true }));
+  const store = new CredentialStore(root);
+  await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "synthetic-api", webAuthenticationToken: "owner-session", generation: 0, principalEpoch: "owner-epoch", principalRecordName: "owner-principal" });
+  let dispatches = 0;
+  let markDispatched!: () => void;
+  const dispatched = new Promise<void>((resolve) => { markDispatched = resolve; });
+  const transport = new CloudKitTransport(async (_input, init) => {
+    dispatches += 1;
+    markDispatched();
+    return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+  });
+  const profiles = parseProfilesDocument({ schemaVersion: 1, profiles: [{ id: "owner", containerId: "iCloud.com.example", environment: "development", backend: "web-services", authenticationMode: "web-user", credentialRef: "owner", allowedScopes: ["private"], recordPolicy: {} }] });
+  const service = new DiagnosticService(profiles, new SessionManager(store, transport));
+
+  const before = new AbortController(); before.abort();
+  await assert.rejects(service.getDatabaseChanges(ownerView, { kind: "beginning" }, before.signal), (error) => error instanceof CloudKitMCPError && error.details.code === "cancelled" && error.details.execution === "notStarted" && error.details.sessionEffect === "unchanged");
+  assert.equal(dispatches, 0);
+
+  const after = new AbortController();
+  const request = service.getDatabaseChanges(ownerView, { kind: "beginning" }, after.signal);
+  await dispatched; after.abort();
+  await assert.rejects(request, (error) => error instanceof CloudKitMCPError && error.details.code === "cancelled" && error.details.execution === "uncertain" && error.details.sessionEffect === "uncertain");
+  assert.equal((await store.status("owner")).uncertain, true);
+});
+
 test("comparison retains successful evidence when the other authorized view fails", async (context) => {
   const service = await makeService(context, (url, body) => url.pathname.includes("/private/")
     ? { records: (body as { records: Array<{ recordName: string }> }).records.map(({ recordName }) => ({ recordName, recordChangeTag: "tag" })) }
@@ -188,6 +229,19 @@ test("comparison retains successful evidence when the other authorized view fail
   assert.equal(result.right.errorCode, "permissionDenied");
   assert.equal(result.conclusions[0]?.category, "inconclusive");
   assert.equal(JSON.stringify(result).includes("must-not-escape"), false);
+});
+
+test("comparison keeps absent-plus-failed and both-failed observations inconclusive", async (context) => {
+  let privateFails = false;
+  const service = await makeService(context, (url, body) => {
+    if (url.pathname.includes("/shared/") || privateFails) return { serverErrorCode: "ACCESS_DENIED" };
+    return { records: (body as { records: Array<{ recordName: string }> }).records.map(({ recordName }) => ({ recordName, serverErrorCode: "NOT_FOUND" })) };
+  });
+  const oneFailed = await service.compareViews(ownerView, sharedView, zone, zone, ["record-a"]);
+  assert.equal(oneFailed.conclusions[0]?.category, "inconclusive");
+  privateFails = true;
+  const bothFailed = await service.compareViews(ownerView, sharedView, zone, zone, ["record-a"]);
+  assert.equal(bothFailed.conclusions[0]?.category, "inconclusive");
 });
 
 test("comparison requires independently corresponding owner-aware zones", async (context) => {

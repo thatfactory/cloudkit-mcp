@@ -26,3 +26,23 @@ test("offline MCP discovery never touches credentials or network", async () => {
     assert.equal(networkCalls, 0);
   } finally { await client.close(); await server.close(); }
 });
+
+test("MCP cancellation reaches a running change diagnostic", async () => {
+  let observedSignal: AbortSignal | undefined;
+  const service = {
+    getDatabaseChanges: async (_view: unknown, _start: unknown, signal?: AbortSignal) => {
+      observedSignal = signal;
+      await new Promise<void>((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }));
+    },
+  } as unknown as DiagnosticService;
+  const server = createServer(service); const client = new Client({ name: "test", version: "1" }); const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const controller = new AbortController();
+    const request = client.callTool({ name: "get_database_changes", arguments: { view: { profileId: "owner", scope: "private" }, start: { kind: "beginning" } } }, undefined, { signal: controller.signal });
+    while (!observedSignal) await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+    await assert.rejects(request);
+    assert.equal(observedSignal.aborted, true);
+  } finally { await client.close(); await server.close(); }
+});

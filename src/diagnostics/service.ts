@@ -8,6 +8,7 @@ import { HandleRegistry, type HandleContext } from "../state/handles.js";
 import { compareObservations } from "./comparison.js";
 import { projectRecord, selectorDigest, type WireRecord } from "./projection.js";
 import { writeDiagnosticEvent } from "../observability/events.js";
+import { preflightOperation, type OperationId } from "../api/operations.js";
 
 /** Explicit view input shared by remote diagnostic tools. */
 export interface ViewInput { readonly profileId: string; readonly scope: DatabaseScope }
@@ -92,6 +93,7 @@ export class DiagnosticService {
   /** Fetches one exact owner-aware zone. */
   async getZone(view: ViewInput, zoneInput: ZoneInput) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "lookupZones");
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     return this.#remote("lookupZones", view, { zones: [zone] }, (body, profile, context) => {
       const item = boundedArray(asObject(body).zones, 1)[0];
@@ -117,11 +119,12 @@ export class DiagnosticService {
   /** Runs one bounded indexed query with no arbitrary predicate body. */
   async queryRecords(view: ViewInput, zoneInput: ZoneInput, recordType: string, filters: readonly QueryFilter[], limit: number, continuationHandle?: string) {
     const profile = this.#profile(view);
-    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
+    this.#preflight(profile, view.scope, "queryRecords");
     if (!profile.recordPolicy.allowedTypes.includes(recordType)) throw invalidInput("The requested record type is not authorized by startup policy.");
     if (filters.length > 10 || filters.some((filter) => !boundedIdentifier(filter.fieldName, 255) || !profile.recordPolicy.queryableFields.includes(filter.fieldName))) throw invalidInput("A query filter is not authorized by startup policy.");
     for (const filter of filters) validateQueryFilter(filter);
     const normalizedLimit = requireLimit(limit);
+    const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const digest = selectorDigest({ recordType, filters, zone, limit: normalizedLimit, desiredKeys: [] });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "queryRecords", digest, zone);
     const cursor = continuationHandle ? this.handles.resolve<QueryCursor>(continuationHandle, context) : undefined;
@@ -141,9 +144,12 @@ export class DiagnosticService {
   /** Projects share topology attached to a proven record without returning share URLs or participant identities. */
   async getShare(view: ViewInput, zoneInput: ZoneInput, recordName: string) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "lookupRecords");
+    if (!boundedIdentifier(recordName, 1024)) throw invalidInput("The record name is invalid.");
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     const referenceResult = await this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName }], desiredKeys: [], numbersAsStrings: true }, (body) => exactLookupItem(body, recordName));
     const record = referenceResult.data;
+    if (!record) return { ...referenceResult, status: "unavailable" as const, completeness: "notEstablished" as const, limitations: ["The exact selected record was not returned in this view."], data: { outcome: "notFoundInView" as const } };
     const referenceError = boundedString(record.serverErrorCode, 128);
     if (referenceError) {
       return { ...referenceResult, status: "unavailable" as const, limitations: ["The selected record lookup returned a per-item provider error."], data: { outcome: classifyProviderOutcome(referenceError) } };
@@ -156,6 +162,7 @@ export class DiagnosticService {
     try {
       const shareResult = await this.#remote("lookupRecords", view, { zoneID: zone, records: [{ recordName: shareRecordName }], desiredKeys: [], numbersAsStrings: true }, (body) => {
         const share = exactLookupItem(body, shareRecordName);
+        if (!share) return { outcome: "notFoundInView", limitations: ["The exact referenced share record was not returned in this view."] };
         const shareError = boundedString(share.serverErrorCode, 128);
         if (shareError) return { outcome: classifyProviderOutcome(shareError), limitations: ["The share-record lookup returned a per-item provider error."] };
         const fields = asObject(share.fields);
@@ -194,8 +201,9 @@ export class DiagnosticService {
   }
 
   /** Reads database change state using a process-bound continuation handle. */
-  async getDatabaseChanges(view: ViewInput, start: ChangeStart) {
+  async getDatabaseChanges(view: ViewInput, start: ChangeStart, signal?: AbortSignal) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "getDatabaseChanges");
     const digest = selectorDigest({ operation: "getDatabaseChanges", resultsLimit: 50 });
     const context = this.#handleContext(await this.sessions.currentView(profile, view.scope), "getDatabaseChanges", digest);
     const cursor = start.kind === "cursor" ? this.handles.resolve<ChangeCursor>(start.handle, context) : undefined;
@@ -218,13 +226,15 @@ export class DiagnosticService {
       const zoneHandles = issued.slice(0, successful.length);
       const changedZones = successful.map((item, index) => ({ handle: zoneHandles[index]!, deleted: item.deleted }));
       return { changedZones, errors, coverage: cursor ? "sinceIssuedCursor" : "beginning", moreComing, continuationHandle: issued[successful.length] };
-    });
+    }, signal);
     return result.data.errors.length > 0 ? { ...result, status: "partial" as const, completeness: "partial" as const } : result;
   }
 
   /** Reads custom-zone record changes and tombstones using a context-bound handle. */
-  async getZoneChanges(view: ViewInput, zoneInput: ZoneInput, start: ChangeStart) {
+  async getZoneChanges(view: ViewInput, zoneInput: ZoneInput, start: ChangeStart, signal?: AbortSignal) {
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "getZoneChanges");
+    if (zoneInput.zoneName === "_defaultZone") throw unsupportedDefaultZoneChanges();
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     if (zone.zoneName === "_defaultZone") throw unsupportedDefaultZoneChanges();
     const digest = selectorDigest({ operation: "getZoneChanges", zone, desiredKeys: [], resultsLimit: 50 });
@@ -255,13 +265,15 @@ export class DiagnosticService {
         return projectRecord(record as WireRecord, selectedProfile, zone, this.handles, { ...context, operation: "record", selectorDigest: digest });
       });
       return { changes, errors: [], coverage: cursor ? "sinceIssuedCursor" : "beginning", moreComing, continuationHandle: this.handles.issue<ChangeCursor>("zoneCursor", context, { token: next, traversalTokenDigests }) };
-    });
+    }, signal);
     return result.data.errors.length > 0 ? { ...result, status: "partial" as const, completeness: "partial" as const } : result;
   }
 
   /** Compares exact record lookups performed independently through two profiles. */
   async compareViews(left: ViewInput, right: ViewInput, leftZoneInput: ZoneInput, rightZoneInput: ZoneInput, recordNames: readonly string[]) {
     const leftProfile = this.#profile(left); const rightProfile = this.#profile(right);
+    this.#preflight(leftProfile, left.scope, "lookupRecords"); this.#preflight(rightProfile, right.scope, "lookupRecords");
+    if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
     const [leftZone, rightZone, leftIdentityBefore, rightIdentityBefore] = await Promise.all([
       this.#resolveZone(leftProfile, left.scope, leftZoneInput),
       this.#resolveZone(rightProfile, right.scope, rightZoneInput),
@@ -288,13 +300,14 @@ export class DiagnosticService {
       samePrincipal: leftResolved.principalAlias === rightResolved.principalAlias,
       identityMapping: mapping,
       observationWindows: { left: { from: leftObservedFrom, to: leftObservedTo }, right: { from: rightObservedFrom, to: rightObservedTo } },
-      conclusions: compareObservations({ view: leftResolved, observedFrom: leftObservedFrom, observedTo: leftObservedTo, identityMapping: mapping, records: keyed(recordNames, leftRecords), limitations: leftResult.status === "rejected" ? ["Left view failed independently."] : [] }, { view: rightResolved, observedFrom: rightObservedFrom, observedTo: rightObservedTo, identityMapping: mapping, records: keyed(recordNames, rightRecords), limitations: rightResult.status === "rejected" ? ["Right view failed independently."] : [] }),
+      conclusions: compareObservations({ view: leftResolved, observedFrom: leftObservedFrom, observedTo: leftObservedTo, identityMapping: leftResult.status === "rejected" ? "unavailable" : mapping, records: keyed(recordNames, leftRecords), limitations: leftResult.status === "rejected" ? ["Left view failed independently."] : [] }, { view: rightResolved, observedFrom: rightObservedFrom, observedTo: rightObservedTo, identityMapping: rightResult.status === "rejected" ? "unavailable" : mapping, records: keyed(recordNames, rightRecords), limitations: rightResult.status === "rejected" ? ["Right view failed independently."] : [] }),
     };
   }
 
   async #records(view: ViewInput, zoneInput: ZoneInput, recordNames: readonly string[], fields: readonly string[]): Promise<ResultEnvelope<readonly RecordObservation[]>> {
     if (recordNames.length === 0 || recordNames.length > 20 || recordNames.some((name) => !boundedIdentifier(name, 1024))) throw invalidInput("Record lookup requires between one and twenty bounded exact names.");
     const profile = this.#profile(view);
+    this.#preflight(profile, view.scope, "lookupRecords");
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
     if (fields.some((field) => !profile.recordPolicy.readablePayloadFields.includes(field))) throw invalidInput("A requested payload field is not authorized by startup policy.");
     const digest = selectorDigest({ zone, recordNames, fields });
@@ -316,10 +329,10 @@ export class DiagnosticService {
     });
   }
 
-  async #remote<T>(operation: Parameters<SessionManager["execute"]>[2], view: ViewInput, body: unknown, project: (body: unknown, profile: Profile, context: HandleContext) => T): Promise<ResultEnvelope<T>> {
+  async #remote<T>(operation: Parameters<SessionManager["execute"]>[2], view: ViewInput, body: unknown, project: (body: unknown, profile: Profile, context: HandleContext) => T, signal?: AbortSignal): Promise<ResultEnvelope<T>> {
     const started = Date.now(); const requestId = randomUUID(); const profile = this.#profile(view);
     try {
-      const result = await this.sessions.execute(profile, view.scope, operation, body);
+      const result = await this.sessions.execute(profile, view.scope, operation, body, signal);
       const providerCode = boundedString(asObject(result.body).serverErrorCode, 128);
       const expectedPublicChallenge = operation === "probeCurrentUser" && profile.authenticationMode === "api-token-public" && providerCode === "AUTHENTICATION_REQUIRED";
       if (providerCode && !expectedPublicChallenge) throw providerError(providerCode, result.replacementWebAuthenticationToken !== undefined);
@@ -346,6 +359,10 @@ export class DiagnosticService {
     const profile = requireProfile(this.profiles, view.profileId);
     if (!profile.allowedScopes.includes(view.scope)) throw invalidInput("The selected profile does not authorize this database scope.");
     return profile;
+  }
+
+  #preflight(profile: Profile, scope: DatabaseScope, operation: OperationId): void {
+    preflightOperation(operation, profile.authenticationMode, scope);
   }
 
   async #resolveZone(profile: Profile, scope: DatabaseScope, input: ZoneInput): Promise<ZoneIdentity> {
@@ -405,9 +422,9 @@ function optionalContinuation(object: Record<string, unknown>, key: string): str
 function requiredContinuation(object: Record<string, unknown>, key: string): string { const value = optionalContinuation(object, key); if (!value) throw malformedContinuation(); return value; }
 function requiredBoolean(object: Record<string, unknown>, key: string): boolean { if (typeof object[key] !== "boolean") throw malformedShape(); return object[key]; }
 
-function exactLookupItem(body: unknown, expectedRecordName: string): Record<string, unknown> {
+function exactLookupItem(body: unknown, expectedRecordName: string): Record<string, unknown> | undefined {
   const records = requireArray(asObject(body), "records", 1);
-  if (records.length === 0) return {};
+  if (records.length === 0) return undefined;
   const record = asObject(records[0]);
   if (boundedString(record.recordName, 1024) !== expectedRecordName) throw malformedRecordCollection();
   return record;

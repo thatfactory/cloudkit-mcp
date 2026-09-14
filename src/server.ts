@@ -44,8 +44,8 @@ export function createServer(service: DiagnosticService): McpServer {
   register(server, "read_record_fields", "Read only exact payload fields enabled by immutable startup policy.", { view: viewSchema, zone: zoneSchema, recordNames: recordNamesSchema, fields: fieldsSchema }, async ({ view, zone, recordNames, fields }) => service.readRecordFields(view, zone, recordNames, fields));
   register(server, "get_share", "Inspect bounded privacy-safe share topology attached to a proven record.", { view: viewSchema, zone: zoneSchema, recordName: z.string().min(1).max(1024) }, async ({ view, zone, recordName }) => service.getShare(view, zone, recordName));
   register(server, "list_subscriptions", "List supported subscription structure without notification payloads or predicate values.", { view: viewSchema }, async ({ view }) => service.listSubscriptions(view));
-  register(server, "get_database_changes", "Read bounded database change state from an explicit beginning or process-bound cursor.", { view: viewSchema, start: changeStartSchema }, async ({ view, start }) => service.getDatabaseChanges(view, start as ChangeStart));
-  register(server, "get_zone_changes", "Read bounded custom-zone changes and tombstones from an explicit beginning or process-bound cursor.", { view: viewSchema, zone: zoneSchema, start: changeStartSchema }, async ({ view, zone, start }) => service.getZoneChanges(view, zone, start as ChangeStart));
+  register(server, "get_database_changes", "Read bounded database change state from an explicit beginning or process-bound cursor.", { view: viewSchema, start: changeStartSchema }, async ({ view, start }, signal) => service.getDatabaseChanges(view, start as ChangeStart, signal));
+  register(server, "get_zone_changes", "Read bounded custom-zone changes and tombstones from an explicit beginning or process-bound cursor.", { view: viewSchema, zone: zoneSchema, start: changeStartSchema }, async ({ view, zone, start }, signal) => service.getZoneChanges(view, zone, start as ChangeStart, signal));
   register(server, "compare_views", "Compare exact record observations made with two independently configured views and zone selectors.", { left: viewSchema, right: viewSchema, leftZone: zoneSchema, rightZone: zoneSchema, recordNames: recordNamesSchema }, async ({ left, right, leftZone, rightZone, recordNames }) => service.compareViews(left, right, leftZone, rightZone, recordNames));
 
   for (const [name, filename, mimeType] of [
@@ -64,11 +64,11 @@ function register<T extends Record<string, z.ZodTypeAny>>(
   name: string,
   description: string,
   inputSchema: T,
-  handler: (input: z.infer<z.ZodObject<T>>) => Promise<unknown> | unknown,
+  handler: (input: z.infer<z.ZodObject<T>>, signal?: AbortSignal) => Promise<unknown> | unknown,
 ): void {
-  const callback = async (input: unknown) => {
+  const callback = async (input: unknown, extra: { readonly signal?: AbortSignal }) => {
     try {
-      const result = await handler(input as z.infer<z.ZodObject<T>>);
+      const result = await handler(input as z.infer<z.ZodObject<T>>, extra.signal);
       const text = JSON.stringify(result);
       if (Buffer.byteLength(text, "utf8") > 512 * 1024) throw safeError({ code: "outputBoundExceeded", message: "The serialized MCP result exceeds the configured output bound.", execution: "completed", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Narrow the record, field, participant, or page selection." });
       return { content: [{ type: "text" as const, text }], structuredContent: asStructured(result) };

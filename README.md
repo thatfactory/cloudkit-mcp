@@ -147,7 +147,7 @@ claude mcp add cloudkit -- \
 | `get_zone_changes` | Record changes and tombstones using process-bound cursors |
 | `compare_views` | Independent bounded comparison of two explicit authorized views |
 
-Shared-zone discovery and shared subscription listing remain capability-gated because the published API documentation does not establish them. A tool reports that limitation rather than interpreting it as an empty result.
+Generic shared `zones/list`/`zones/lookup` and shared subscription listing remain capability-gated because the published API documentation does not establish them. Shared-zone discovery instead uses the verified `changes/database` workflow. A tool reports an unverified limitation rather than interpreting it as an empty result.
 
 ## Example prompts
 
