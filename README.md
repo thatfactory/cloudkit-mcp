@@ -175,4 +175,4 @@ npm pack --json --dry-run
 
 `npm run check` performs schema/policy consistency, strict type checking, credential-free deterministic tests, a clean build, package-content verification, and installation/execution from a real tarball outside the checkout. Ordinary tests block or inject networking and contain synthetic data only.
 
-Architecture decisions, capability gates, test expectations, and release evidence are maintained in [Documentation/ImplementationPlan.md](Documentation/ImplementationPlan.md). Approved dependency exceptions are recorded in [Documentation/Dependencies.md](Documentation/Dependencies.md).
+Approved dependency exceptions are recorded in [Documentation/Dependencies.md](Documentation/Dependencies.md). Runtime capability and live-evidence boundaries are available from `cloudkit://capabilities`.

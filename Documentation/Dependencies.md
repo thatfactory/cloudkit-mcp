@@ -6,7 +6,7 @@ The repository owner explicitly approved the runtime and development dependencie
 
 | Dependency | Version policy | Purpose | Native or first-party alternative |
 | --- | --- | --- | --- |
-| `@modelcontextprotocol/sdk` | Exact `1.30.0` | Official TypeScript implementation of MCP server framing, stdio transport, tools, and resources | Reimplementing the protocol would increase interoperability and security risk and would contradict the implementation plan's official-SDK requirement |
+| `@modelcontextprotocol/sdk` | Exact `1.30.0` | Official TypeScript implementation of MCP server framing, stdio transport, tools, and resources | Reimplementing the protocol would increase interoperability and security risk; the official SDK is the repository's deliberate protocol boundary |
 | `zod` | Exact `4.6.2` | Runtime validation for untrusted configuration, MCP inputs, and CloudKit response projections; required peer dependency of the MCP SDK | Repository-owned validation remains responsible for policy semantics, but replacing the supported schema layer would duplicate a large security-sensitive surface |
 
 Both packages use permissive licenses and are pinned exactly for reproducibility. Updates require an intentional compatibility and security review.
