@@ -28,6 +28,9 @@ export class SessionManager {
       } catch (error) {
         if (stored.class !== "web-user") throw error;
         const details = error instanceof CloudKitMCPError ? error.toSafeObject() : { code: "authenticationUncertain" as const, message: "The rotating CloudKit user request failed after dispatch without a durable replacement token.", execution: "uncertain" as const, sessionEffect: "uncertain" as const, retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." };
+        if (details.execution === "notStarted" && details.sessionEffect === "unchanged") {
+          return { value: { body: {}, status: 0, error: details, resolvedView: this.resolveView(profile, scope, stored) } };
+        }
         return { value: { body: {}, status: 0, error: { ...details, retryable: false, retryConditions: [], sessionEffect: "uncertain" as const }, resolvedView: this.resolveView(profile, scope, { ...stored, uncertain: true }) }, replacement: { ...stored, uncertain: true } };
       }
       let replacement: StoredCredential | undefined;
@@ -36,7 +39,7 @@ export class SessionManager {
         const token = result.replacementWebAuthenticationToken;
         if (!token) {
           replacement = { ...stored, uncertain: true };
-          effectiveResult = { ...result, error: { code: "authenticationUncertain", message: "The rotating CloudKit user session did not yield a durable replacement token.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." } };
+          if (!result.error) effectiveResult = { ...result, error: { code: "authenticationUncertain", message: "The rotating CloudKit user session did not yield a durable replacement token.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." } };
         } else {
           const response = typeof result.body === "object" && result.body !== null ? result.body as Record<string, unknown> : {};
           const observedPrincipal = operation === "probeCurrentUser" && typeof response.userRecordName === "string" && response.userRecordName.length <= 1024 ? response.userRecordName : stored.principalRecordName;

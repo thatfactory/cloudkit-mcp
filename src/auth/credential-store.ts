@@ -20,11 +20,14 @@ export interface CredentialStatus {
   readonly uncertain?: boolean;
 }
 
+/** Injectable atomic replacement seam used by deterministic failure tests. */
+export type ReplacementCommitter = (credentialRef: string, credential: StoredCredential) => Promise<void>;
+
 /** Owner-only POSIX credential store with symlink rejection and atomic replacement. */
 export class CredentialStore {
   readonly #root: string;
 
-  constructor(root: string) {
+  constructor(root: string, private readonly replacementCommitter?: ReplacementCommitter) {
     this.#root = resolve(root);
   }
 
@@ -133,7 +136,8 @@ export class CredentialStore {
       const outcome = await operation(credential);
       if (outcome.replacement) {
         try {
-          await this.write(credentialRef, outcome.replacement);
+          if (this.replacementCommitter) await this.replacementCommitter(credentialRef, outcome.replacement);
+          else await this.write(credentialRef, outcome.replacement);
         } catch {
           await rm(this.#slotPath(credentialRef), { force: true });
           throw safeError({ code: "authenticationUncertain", message: "The replacement credential could not be committed atomically, so the local slot was invalidated.", execution: "completed", sessionEffect: "uncertain", retryable: false, retryConditions: [], nextStep: "Reauthenticate and import a fresh credential before another request." });
