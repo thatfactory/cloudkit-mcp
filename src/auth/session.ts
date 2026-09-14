@@ -28,6 +28,9 @@ export class SessionManager {
       } catch (error) {
         if (stored.class !== "web-user") throw error;
         const details = error instanceof CloudKitMCPError ? error.toSafeObject() : { code: "authenticationUncertain" as const, message: "The rotating CloudKit user request failed after dispatch without a durable replacement token.", execution: "uncertain" as const, sessionEffect: "uncertain" as const, retryable: false, retryConditions: [], nextStep: "Reauthenticate this profile before another request." };
+        if (details.execution === "notStarted" && details.sessionEffect === "unchanged") {
+          return { value: { body: {}, status: 0, error: details, resolvedView: this.resolveView(profile, scope, stored) } };
+        }
         return { value: { body: {}, status: 0, error: { ...details, retryable: false, retryConditions: [], sessionEffect: "uncertain" as const }, resolvedView: this.resolveView(profile, scope, { ...stored, uncertain: true }) }, replacement: { ...stored, uncertain: true } };
       }
       let replacement: StoredCredential | undefined;

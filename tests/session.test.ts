@@ -99,6 +99,21 @@ test("cancellation after rotating-session dispatch marks the slot uncertain", as
   assert.equal(saved.class === "web-user" && saved.uncertain, true);
 });
 
+test("cancellation before rotating-session dispatch preserves the valid slot", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "cloudkit-session-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
+  const store = new CredentialStore(root); await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 4, principalEpoch: "epoch", principalRecordName: "principal" });
+  let calls = 0;
+  const transport = new CloudKitTransport(async () => { calls += 1; return new Response("{}"); });
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}, controller.signal), /cancelled/);
+  assert.equal(calls, 0);
+  const saved = await store.read("owner");
+  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, "session");
+  assert.equal(saved.class === "web-user" && saved.uncertain, undefined);
+  assert.equal(saved.generation, 4);
+});
+
 test("401 without replacement preserves expiry diagnosis and suspends the slot", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-session-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
   const store = new CredentialStore(root); await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
