@@ -18,10 +18,17 @@ test("synthetic contracts exercise the complete read-only diagnostic service", a
   let tokenGeneration = 0;
   const transport = new CloudKitTransport(async (input, init) => {
     const url = new URL(input); const request = init?.body ? JSON.parse(Buffer.from(init.body as Uint8Array).toString("utf8")) as Record<string, unknown> : {};
-    const token = url.searchParams.has("ckWebAuthToken") ? { ckWebAuthToken: `replacement-${tokenGeneration += 1}` } : {};
-    if (url.pathname.endsWith("/users/caller")) return response({ userRecordName: "owner-principal", ...token });
+    const token = url.searchParams.has("ckSession") ? { ckWebAuthToken: `replacement-${tokenGeneration += 1}` } : {};
+    if (url.pathname.endsWith("/users/caller")) {
+      assert.equal(url.pathname.endsWith("/development/public/users/caller"), true);
+      assert.equal(url.searchParams.has("ckWebAuthToken"), false);
+      return response({ userRecordName: "owner-principal", ...token });
+    }
     if (url.pathname.endsWith("/zones/list")) return response({ zones: [{ zoneName: "Inventory", ownerRecordName: "owner-principal" }], ...token });
-    if (url.pathname.endsWith("/zones/lookup")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], ...token });
+    if (url.pathname.endsWith("/zones/lookup")) {
+      assert.deepEqual(request.zones, [{ zoneName: "Inventory", ownerRecordName: "owner-principal" }]);
+      return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], ...token });
+    }
     if (url.pathname.endsWith("/records/query")) return response({ records: [wireRecord("record-a")], continuationMarker: "next-page", ...token });
     if (url.pathname.endsWith("/subscriptions/list")) return response({ subscriptions: [{ subscriptionType: "zone", zoneID: { zoneName: "Inventory" } }], ...token });
     if (url.pathname.endsWith("/changes/database")) return response({ zones: [{ zoneID: { zoneName: "Inventory", ownerRecordName: "owner-principal" } }], syncToken: "database-token", ...token });

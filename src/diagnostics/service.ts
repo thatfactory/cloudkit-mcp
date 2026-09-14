@@ -81,7 +81,7 @@ export class DiagnosticService {
   async getZone(view: ViewInput, zoneInput: ZoneInput) {
     const profile = this.#profile(view);
     const zone = await this.#resolveZone(profile, view.scope, zoneInput);
-    return this.#remote("lookupZones", view, { zones: [{ zoneID: zone }] }, (body, profile, context) => {
+    return this.#remote("lookupZones", view, { zones: [zone] }, (body, profile, context) => {
       const item = boundedArray(asObject(body).zones, 1)[0];
       if (!item) return { outcome: "notFoundInView" };
       const itemError = boundedString(asObject(item).serverErrorCode, 128);

@@ -6,7 +6,7 @@
     {
       "id": "probeCurrentUser",
       "method": "GET",
-      "path": "{scope}/users/caller",
+      "path": "public/users/caller",
       "effect": "read",
       "credentials": ["apiTokenWebUser"],
       "documentedScopes": ["public", "private", "shared"],

@@ -30,6 +30,21 @@ test("public API-token probe accepts only a documented authentication challenge"
   assert.equal(result.error, undefined);
 });
 
+test("web-user probe uses the public caller endpoint and ckSession contract", async () => {
+  let observed: URL | undefined;
+  const transport = new CloudKitTransport(async (input) => {
+    observed = new URL(input);
+    return new Response(JSON.stringify({ userRecordName: "principal" }), {
+      status: 200,
+      headers: { "content-type": "application/json", "x-apple-cloudkit-web-auth-token": "replacement" },
+    });
+  });
+  await transport.execute("probeCurrentUser", { containerId: "iCloud.com.example", environment: "development", scope: "private" }, { mode: "web-user", apiToken: "api", webAuthenticationToken: "session" }, {});
+  assert.equal(observed?.pathname, "/database/1/iCloud.com.example/development/public/users/caller");
+  assert.equal(observed?.searchParams.get("ckSession"), "session");
+  assert.equal(observed?.searchParams.has("ckWebAuthToken"), false);
+});
+
 test("redirects are rejected and never followed", async () => {
   let redirect: RequestRedirect | undefined;
   const transport = new CloudKitTransport(async (_input, init) => { redirect = init?.redirect; return new Response("", { status: 302, headers: { location: "https://evil.example" } }); });
