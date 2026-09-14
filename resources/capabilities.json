@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "server": "cloudkit-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "remoteDataEffect": "none",
   "backend": "cloudkit-web-services",
   "authentication": {

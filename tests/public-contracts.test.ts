@@ -16,7 +16,7 @@ test("public documentation retains exact high-risk tool boundaries", async () =>
     liveEvidence: { limitations: string[] };
   };
   assert.match(readme, /cloudkit:\/\/capabilities/);
-  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.1\.0/);
+  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.1\.1/);
   assert.match(readme, /Documentation\/Setup\.md/);
   assert.match(readme, /Documentation\/Capabilities\.md/);
   assert.match(capabilityGuide, /`compare_views` \| Compare exact record metadata across independently authenticated and independently zone-selected views/);

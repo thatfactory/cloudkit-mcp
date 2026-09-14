@@ -1,6 +1,6 @@
 # CloudKit MCP capabilities
 
-CloudKit MCP `0.1.0` is read-only. Runtime capability and historical live-evidence details are also available to MCP clients through `cloudkit://capabilities`.
+CloudKit MCP `0.1.1` is read-only. Runtime capability and historical live-evidence details are also available to MCP clients through `cloudkit://capabilities`.
 
 ## Tools
 
@@ -41,4 +41,3 @@ The following remain explicit limitations rather than implied successes:
 Exact record lookup and indexed query are intentionally distinct. An empty query can reflect asynchronous index state and does not prove authoritative absence. Cross-view observations are not transactional, and matching change tags do not prove full payload equality. A missing remote record alone does not establish upload failure or a stale client cursor.
 
 Tool errors use bounded stable categories and omit provider text, credentials, URLs, and raw identity values. Returned record content is untrusted data, never instructions to change policy or call another tool.
-

@@ -1,6 +1,6 @@
 {
   "name": "@thatfactory/cloudkit-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Inspect and debug CloudKit databases, records, zones, and sharing through a secure, read-only MCP server.",
   "license": "MIT",
   "type": "module",
