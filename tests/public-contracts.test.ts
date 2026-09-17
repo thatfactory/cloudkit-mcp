@@ -16,7 +16,7 @@ test("public documentation retains exact high-risk tool boundaries", async () =>
     liveEvidence: { limitations: string[] };
   };
   assert.match(readme, /cloudkit:\/\/capabilities/);
-  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.1\.1/);
+  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.2\.0/);
   assert.match(readme, /Documentation\/Setup\.md/);
   assert.match(readme, /Documentation\/Capabilities\.md/);
   assert.match(capabilityGuide, /`compare_views` \| Compare exact record metadata across independently authenticated and independently zone-selected views/);
@@ -32,5 +32,5 @@ test("public documentation retains exact high-risk tool boundaries", async () =>
   assert.equal(capabilities.limitations.some((limitation) => limitation.includes("no record types, queryable fields, or payload fields")), true);
   assert.equal(provenance.liveEvidence.limitations.some((limitation) => limitation.includes("no record types, queryable fields, or payload fields")), true);
   assert.equal(provenance.liveEvidence.limitations.some((limitation) => limitation.includes("account-switch and expiry")), true);
-  assert.doesNotMatch(readme, /img\.shields\.io\/npm\/v/);
+  assert.match(readme, /img\.shields\.io\/npm\/v\/@thatfactory\/cloudkit-mcp\?logo=npm&logoColor=white/);
 });

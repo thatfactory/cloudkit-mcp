@@ -1,4 +1,5 @@
 <p align="center">
+  <a href="https://www.npmjs.com/package/@thatfactory/cloudkit-mcp"><img alt="NPM" src="https://img.shields.io/npm/v/@thatfactory/cloudkit-mcp?logo=npm&logoColor=white"></a>
   <a href="https://developers.openai.com/codex/mcp"><img alt="Codex MCP" src="https://img.shields.io/badge/Codex-MCP-1F70C1.svg?logo=icloud&logoColor=white"></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code/mcp"><img alt="Claude MCP" src="https://img.shields.io/badge/Claude-MCP-D97757.svg?logo=claude&logoColor=white"></a>
   <a href="https://en.wikipedia.org/wiki/MIT_License"><img alt="License" src="https://img.shields.io/badge/License-MIT-67ac5b.svg?logo=googledocs&logoColor=white"></a>
@@ -29,7 +30,7 @@ Run this once, replacing both paths:
 
 ```sh
 codex mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.1.1 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
@@ -41,7 +42,7 @@ Restart Codex after changing MCP configuration so the new server process is load
 
 ```sh
 claude mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.1.1 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials

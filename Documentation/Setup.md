@@ -52,7 +52,7 @@ Record policy is deny-by-default:
 Run this in a private interactive terminal. Replace the paths and profile ID; never paste the requested secret into chat or a command argument.
 
 ```sh
-npx --yes --package=@thatfactory/cloudkit-mcp@0.1.1 cloudkit-mcp auth import \
+npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 cloudkit-mcp auth import \
   --profile owner-development \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
@@ -63,7 +63,7 @@ The prompt disables terminal echo. The store creates one owner-only slot for the
 Safe credential state can be checked without revealing its contents:
 
 ```sh
-npx --yes --package=@thatfactory/cloudkit-mcp@0.1.1 cloudkit-mcp auth status \
+npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 cloudkit-mcp auth status \
   --profile owner-development \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials

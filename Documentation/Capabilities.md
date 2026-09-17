@@ -1,6 +1,6 @@
 # CloudKit MCP capabilities
 
-CloudKit MCP `0.1.1` is read-only. Runtime capability and historical live-evidence details are also available to MCP clients through `cloudkit://capabilities`.
+CloudKit MCP `0.2.0` is read-only. Runtime capability and historical live-evidence details are also available to MCP clients through `cloudkit://capabilities`.
 
 ## Tools
 
