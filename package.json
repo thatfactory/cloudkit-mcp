@@ -1,6 +1,6 @@
 {
   "name": "@thatfactory/cloudkit-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Inspect and debug CloudKit databases, records, zones, and sharing through a secure, read-only MCP server.",
   "license": "MIT",
   "type": "module",
@@ -34,7 +34,7 @@
     "check": "npm run schemas:check && npm run typecheck && npm test && npm run build && npm run package:verify && npm run smoke && npm run release:offline"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "zod": "4.6.2"
   },
   "devDependencies": {
