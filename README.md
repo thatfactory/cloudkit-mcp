@@ -30,7 +30,7 @@ Run this once, replacing both paths:
 
 ```sh
 codex mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.1 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
@@ -42,7 +42,7 @@ Restart Codex after changing MCP configuration so the new server process is load
 
 ```sh
 claude mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.0 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.1 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
