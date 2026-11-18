@@ -13,7 +13,8 @@ test("credential store creates owner-only atomic files and exposes safe status",
   const store = new CredentialStore(join(root, "store"));
   await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api-secret", webAuthenticationToken: "web-secret", generation: 0, principalEpoch: "epoch" });
   const status = await store.status("owner");
-  assert.deepEqual(status, { credentialRef: "owner", available: true, credentialClass: "web-user", generation: 0, principalBound: false, uncertain: false });
+  assert.deepEqual({ ...status, recovery: undefined }, { credentialRef: "owner", available: true, usable: true, credentialClass: "web-user", generation: 0, principalBound: false, uncertain: false, recovery: undefined });
+  assert.equal(status.recovery?.state, "idle");
   assert.equal(JSON.stringify(status).includes("secret"), false);
   assert.match(await readFile(join(root, "store", "owner.json"), "utf8"), /web-secret/);
   assert.equal((await stat(join(root, "store"))).mode & 0o777, 0o700);
@@ -68,7 +69,7 @@ test("stale credential locks fail closed without invoking the operation", async 
   assert.equal(invoked, false);
 });
 
-test("failed atomic replacement invalidates the consumed credential slot", async (context) => {
+test("failed atomic replacement suspends the session while retaining recovery configuration", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-credentials-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
   const store = new CredentialStore(root, async () => { throw new Error("private filesystem detail"); });
   await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
@@ -78,7 +79,11 @@ test("failed atomic replacement invalidates the consumed credential slot", async
     assert.equal(text.includes("private filesystem detail"), false);
     return true;
   });
-  assert.deepEqual(await store.status("owner"), { credentialRef: "owner", available: false });
+  const status = await store.status("owner");
+  assert.equal(status.available, true);
+  assert.equal(status.usable, false);
+  const retained = await store.read("owner");
+  assert.equal(retained.class === "web-user" && retained.apiToken, "api");
 });
 
 test("payload projection returns only selected allowed fields and redacts token-like data", () => {

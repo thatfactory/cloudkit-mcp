@@ -20,17 +20,17 @@ CloudKit MCP is especially useful for questions like:
 
 ## Quick start
 
-You need Node.js 24+, a CloudKit container, a non-secret profile file, and credentials for each account view you want to inspect. Credential import is the only required interactive terminal step; secrets are read with echo disabled and never belong in chat or MCP arguments.
+You need Node.js 24+, a CloudKit container, a non-secret profile file, and credentials for each account view you want to inspect. Initial web-user setup imports two separate secrets: the container/environment API token and an Apple-issued user-session token. The terminal hides both inputs; secrets never belong in chat or MCP arguments. Established sessions recover automatically through supported Apple Post Message sign-in, with the operator completing Apple prompts when needed.
 
 See **[Setup](https://github.com/thatfactory/cloudkit-mcp/blob/main/Documentation/Setup.md)** for the profile format, credential import, and authentication modes.
 
 ### Codex
 
-Run this once, replacing both paths:
+Complete **Setup → Import credentials once** first. Then run this once, replacing both paths. These commands register `serve` against the existing store; they do not sign in to Apple or import credentials:
 
 ```sh
 codex mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.2 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.3.0 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
@@ -42,13 +42,21 @@ Restart Codex after changing MCP configuration so the new server process is load
 
 ```sh
 claude mcp add cloudkit -- \
-  npx --yes --package=@thatfactory/cloudkit-mcp@0.2.2 \
+  npx --yes --package=@thatfactory/cloudkit-mcp@0.3.0 \
   cloudkit-mcp serve \
   --profiles /absolute/path/to/cloudkit-profiles.json \
   --credential-store /absolute/private/path/cloudkit-credentials
 ```
 
-Then ask your agent to call `get_context` before `probe_access`. The first call confirms offline policy; the second verifies one explicit account and database scope.
+Then ask your agent to call `get_context` before `probe_access`. The first call confirms offline policy; the second verifies one explicit account and database scope and binds the intended web-user principal.
+
+## Authentication recovery and immediate inspection
+
+An expired or uncertain web-user session starts one automatic recovery attempt. The connector opens a local page; the operator clicks **Open Apple sign-in** and completes Apple’s prompts for the same account. The connector validates and stores the replacement session. Agents use `recover_session` to inspect, restart, or cancel recovery; tokens never pass through MCP. See [Setup](https://github.com/thatfactory/cloudkit-mcp/blob/main/Documentation/Setup.md#automatic-session-recovery) for Post Message, fixed-origin ports, manual fallback, and cancellation.
+
+For an immediate check of another account’s private records, use **CloudKit Console → Act As iCloud Account → Open Sign In Window**. Confirm the intended container, environment, account, and acting-as banner. This is [Apple’s supported data-inspection workflow](https://developer.apple.com/videos/play/wwdc2022/10115/?time=163); its Console session is separate from MCP authentication.
+
+Read [Troubleshooting](https://github.com/thatfactory/cloudkit-mcp/blob/main/resources/troubleshooting.md) before building an authentication workaround or changing schema to inspect data. The same guidance ships in the npm package as `cloudkit://troubleshooting` and is advertised to MCP agents.
 
 ## What your agent can inspect
 
@@ -67,7 +75,7 @@ See **[Capabilities and limitations](https://github.com/thatfactory/cloudkit-mcp
 
 - Credentials stay in an explicitly configured owner-only local directory.
 - Credentials never appear in profiles, tool results, stdout, fixtures, or the npm package.
-- Web-user requests serialize session rotation and fail closed when session state is uncertain.
+- Web-user requests durably suspend tokens before dispatch, serialize rotation, and recover only for the previously bound account.
 - Provider identities and cursors are opaque by default.
 - Remote requests use a closed read-only registry and only Apple's fixed CloudKit Web Services origin.
 - Record content is treated as untrusted data, never agent instructions.

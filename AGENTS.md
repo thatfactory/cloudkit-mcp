@@ -2,6 +2,8 @@
 
 Read [README](README.md) and `package.json` for the supported interface and validation commands. Keep the connector read-only. Preserve account and session isolation, opaque handle ownership, pagination, and privacy-safe diagnostics. Never expose CloudKit credentials, record contents, account identifiers, or temporary URLs in source or logs. Use deterministic tests for maintenance; live-account activity requires an explicit task request.
 
+For authentication or account-data inspection, read `resources/troubleshooting.md`. Prefer CloudKit Console’s **Act As iCloud Account** when it answers the immediate inspection question; confirm the container, environment, intended account and acting-as banner. Console authentication is independent of the MCP credential store. Do not build temporary login helpers or modify schema solely for a read-only inspection.
+
 ## Codex review configuration
 
 Automatic Codex PR review is enabled. Use all PR authors and the opening/ready trigger, keep exhaustive review off, and keep separate Security Review manual. Apply the managed lifecycle; do not request a duplicate manual review. The policy-validation hosting check is required for merge.

@@ -5,7 +5,7 @@ const packageDocument = JSON.parse(await readFile(new URL("../package.json", imp
 const capabilities = JSON.parse(await readFile(new URL("../resources/capabilities.json", import.meta.url), "utf8")) as {
   version: string;
   tools: string[];
-  authentication: Record<string, { implemented: boolean; liveVerifiedScopes: string[] }>;
+  authentication: Record<string, { implemented: boolean; liveVerifiedScopes: string[]; recovery?: { implemented: boolean; liveVerified: boolean; lastObservedAt?: string; callbackMode: string; callbackOrigin: string } }>;
   backendOperations: Array<{ id: string; implementationStatus: string; documentedScopes: string[]; unverifiedScopes: string[]; liveVerificationStatus: string; liveVerifiedScopes: string[]; lastObservedAt?: string }>;
   limitations: string[];
 };
@@ -14,6 +14,7 @@ const provenance = JSON.parse(await readFile(new URL("../contracts/provenance.js
   sources: Array<{ id: string }>;
   backendDecision: { status: string };
   liveEvidence: { status: string; observedAt?: string; credentialClasses: string[]; limitations: string[] };
+  recoveryEvidence?: { status: string; observedAt: string; callbackMode: string; callbackOrigin: string };
 };
 const policy = JSON.parse(await readFile(new URL("../contracts/operation-policy.json", import.meta.url), "utf8")) as {
   operations: Array<{
@@ -30,10 +31,13 @@ const policy = JSON.parse(await readFile(new URL("../contracts/operation-policy.
     lastObservedAt?: string;
   }>;
 };
-const expectedTools = ["get_context", "probe_access", "list_zones", "get_zone", "get_records", "query_records", "read_record_fields", "get_share", "list_subscriptions", "get_database_changes", "get_zone_changes", "compare_views"];
+const expectedTools = ["get_context", "probe_access", "recover_session", "list_zones", "get_zone", "get_records", "query_records", "read_record_fields", "get_share", "list_subscriptions", "get_database_changes", "get_zone_changes", "compare_views"];
 if (capabilities.version !== packageDocument.version) throw new Error("capability version does not match package version");
 if (JSON.stringify(capabilities.tools) !== JSON.stringify(expectedTools)) throw new Error("capability tool registry is inconsistent");
 if (Object.values(capabilities.authentication).some(({ implemented, liveVerifiedScopes }) => implemented !== true || !Array.isArray(liveVerifiedScopes))) throw new Error("authentication capability evidence is inconsistent");
+const recovery = capabilities.authentication.webUser?.recovery;
+if (!recovery?.implemented || recovery.callbackMode !== "post-message" || recovery.callbackOrigin !== "https://cdn.apple-cloudkit.com") throw new Error("recovery capability contract is inconsistent");
+if (recovery.liveVerified && (provenance.recoveryEvidence?.status !== "samePrincipalRecoveryVerified" || provenance.recoveryEvidence.observedAt !== recovery.lastObservedAt || provenance.recoveryEvidence.callbackMode !== recovery.callbackMode || provenance.recoveryEvidence.callbackOrigin !== recovery.callbackOrigin || provenance.recordedAt < provenance.recoveryEvidence.observedAt)) throw new Error("recovery live evidence is inconsistent");
 if (capabilities.limitations.some((limitation) => /no operation has live cloudkit verification/i.test(limitation))) throw new Error("capability limitations contain stale live-evidence claims");
 if (provenance.backendDecision.status !== "selectedAndCoreWorkflowLiveVerified" || provenance.liveEvidence.status !== "coreWorkflowVerified" || provenance.liveEvidence.observedAt === undefined) throw new Error("provenance does not record the verified core workflow");
 const capabilityCredentialNames: Record<string, string> = { serverKey: "server-key", apiTokenPublic: "api-token-public", webUser: "api-token-plus-web-authentication-token" };

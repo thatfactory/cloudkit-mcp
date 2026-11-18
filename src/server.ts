@@ -26,10 +26,11 @@ const queryValueSchema = z.union([
 
 /** Creates a side-effect-free MCP server with injected diagnostic behavior. */
 export function createServer(service: DiagnosticService): McpServer {
-  const server = new McpServer({ name: "cloudkit-mcp", version: VERSION });
+  const server = new McpServer({ name: "cloudkit-mcp", version: VERSION }, { instructions: "Call get_context before probe_access. Authentication recovery starts automatically for configured web-user sessions; use recover_session status and let the operator complete Apple sign-in. Retry a notStarted read once only after recovery succeeds; completed or uncertain reads require a fresh observation. Read cloudkit://troubleshooting. For immediate account-data inspection, use CloudKit Console Act As iCloud Account with the operator's intended account, container and environment; verify the acting-as banner. Console sign-in is separate from MCP authentication." });
 
   register(server, "get_context", "Report offline profile policy and capability state without loading credentials or contacting Apple.", { profileId: z.string().min(1).max(255).optional() }, async ({ profileId }) => service.getContext(profileId));
   register(server, "probe_access", "Perform one minimal authentication/current-principal probe; an API-token-public profile may return the documented user-authentication challenge without database access.", { view: viewSchema }, async ({ view }) => service.probeAccess(view));
+  register(server, "recover_session", "Start, inspect or cancel local web-user session recovery. The operator completes Apple sign-in; tokens and browser URLs are never tool inputs or results. Read cloudkit://troubleshooting for Act As iCloud Account inspection.", { profileId: z.string().min(1).max(255), action: z.enum(["start", "status", "cancel"]), attemptId: z.string().regex(/^[a-f0-9]{36}$/).optional() }, async ({ profileId, action, attemptId }) => service.recoverSession(profileId, action, attemptId), false);
   register(server, "list_zones", "List bounded owner-aware zones for an explicit view in an enabled documented scope.", { view: viewSchema }, async ({ view }) => service.listZones(view));
   register(server, "get_zone", "Look up one exact owner-aware zone.", { view: viewSchema, zone: zoneSchema }, async ({ view, zone }) => service.getZone(view, zone));
   register(server, "get_records", "Look up metadata for at most twenty exact records in one owner-aware zone.", { view: viewSchema, zone: zoneSchema, recordNames: recordNamesSchema }, async ({ view, zone, recordNames }) => service.getRecords(view, zone, recordNames));
@@ -52,8 +53,9 @@ export function createServer(service: DiagnosticService): McpServer {
     ["capabilities", "capabilities.json", "application/json"],
     ["profile-schema", "schemas/profiles.json", "application/schema+json"],
     ["result-schema", "schemas/result-envelope.json", "application/schema+json"],
+    ["troubleshooting", "troubleshooting.md", "text/markdown"],
   ] as const) {
-    const uri = name === "capabilities" ? "cloudkit://capabilities" : name === "profile-schema" ? "cloudkit://schemas/profiles" : "cloudkit://schemas/result-envelope";
+    const uri = name === "capabilities" ? "cloudkit://capabilities" : name === "profile-schema" ? "cloudkit://schemas/profiles" : name === "troubleshooting" ? "cloudkit://troubleshooting" : "cloudkit://schemas/result-envelope";
     server.registerResource(name, uri, { mimeType, description: "Packaged static CloudKit MCP safety and schema contract." }, async () => ({ contents: [{ uri, mimeType, text: await readFile(new URL(`../resources/${filename}`, import.meta.url), "utf8") }] }));
   }
   return server;
@@ -65,6 +67,7 @@ function register<T extends Record<string, z.ZodTypeAny>>(
   description: string,
   inputSchema: T,
   handler: (input: z.infer<z.ZodObject<T>>, signal?: AbortSignal) => Promise<unknown> | unknown,
+  readOnly = true,
 ): void {
   const callback = async (input: unknown, extra: { readonly signal?: AbortSignal }) => {
     try {
@@ -77,7 +80,7 @@ function register<T extends Record<string, z.ZodTypeAny>>(
       return { isError: true, content: [{ type: "text" as const, text: JSON.stringify(safe) }], structuredContent: asStructured(safe) };
     }
   };
-  server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } } as never, callback as never);
+  server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: readOnly, openWorldHint: true } } as never, callback as never);
 }
 
 function asStructured(value: unknown): Record<string, unknown> {

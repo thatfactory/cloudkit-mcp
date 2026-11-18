@@ -3,13 +3,15 @@ import { randomUUID } from "node:crypto";
 import { createServer, VERSION } from "./server.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CloudKitTransport } from "./api/transport.js";
-import { CredentialStore, type StoredCredential } from "./auth/credential-store.js";
+import { bindWebCredential, CredentialStore, type StoredCredential } from "./auth/credential-store.js";
+import { RecoveryCoordinator } from "./auth/recovery.js";
+import { PostMessageProvider } from "./auth/post-message.js";
 import { SessionManager } from "./auth/session.js";
 import { loadProfilesFile, requireProfile, type ProfilesDocument } from "./config/profiles.js";
 import { DiagnosticService } from "./diagnostics/service.js";
-import { sanitizeUnknownError } from "./errors.js";
+import { CloudKitMCPError, safeError, sanitizeUnknownError } from "./errors.js";
 
-interface CommonOptions { readonly profilesPath?: string; readonly credentialStorePath?: string }
+interface CommonOptions { readonly profilesPath?: string; readonly credentialStorePath?: string; readonly recoveryMode?: "post-message" | "manual"; readonly recoveryPort?: number }
 
 /** Runs the CLI without loading credentials for help, version, or static discovery. */
 async function main(): Promise<void> {
@@ -18,23 +20,25 @@ async function main(): Promise<void> {
   if (args.length === 1 && args[0] === "--version") return void process.stdout.write(`${VERSION}\n`);
   const command = args[0]?.startsWith("-") || args.length === 0 ? "serve" : args[0];
   const remainder = command === "serve" && args[0] !== "serve" ? args : args.slice(1);
-  if (command === "serve") return serve(parseCommonOptions(remainder));
+  if (command === "serve") return serve(parseCommonOptions(remainder, true));
   if (command === "auth") return authCommand(remainder);
   throw new Error("Unknown command. Run cloudkit-mcp --help.");
 }
 
 function writeHelp(): void {
-  process.stdout.write(`cloudkit-mcp ${VERSION}\n\nUsage:\n  cloudkit-mcp serve [--profiles <absolute-json-path>] [--credential-store <absolute-directory>]\n  cloudkit-mcp auth import --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp auth status --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp auth remove --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp --help\n  cloudkit-mcp --version\n\nThe server is read-only. --allow-writes is rejected and cannot enable mutations.\n`);
+  process.stdout.write(`cloudkit-mcp ${VERSION}\n\nUsage:\n  cloudkit-mcp serve [--profiles <absolute-json-path>] [--credential-store <absolute-directory>] [--recovery-mode post-message|manual] [--recovery-port 0..65535]\n  cloudkit-mcp auth import --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp auth status --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp auth remove --profile <id> --profiles <absolute-json-path> --credential-store <absolute-directory>\n  cloudkit-mcp --help\n  cloudkit-mcp --version\n\nThe server is read-only. --allow-writes is rejected and cannot enable mutations.\n`);
 }
 
 async function serve(options: CommonOptions): Promise<void> {
   const profiles: ProfilesDocument = options.profilesPath ? await loadProfilesFile(options.profilesPath) : { schemaVersion: 1, profiles: [] };
   const store = new CredentialStore(options.credentialStorePath ?? defaultCredentialStore());
-  const service = new DiagnosticService(profiles, new SessionManager(store, new CloudKitTransport()));
+  const cloudkit = new CloudKitTransport();
+  const recovery = new RecoveryCoordinator(store, cloudkit, options.recoveryMode === "manual" ? undefined : new PostMessageProvider(cloudkit, options.recoveryPort ?? 0));
+  const service = new DiagnosticService(profiles, new SessionManager(store, cloudkit, recovery));
   const server = createServer(service);
   const transport = new StdioServerTransport();
   let closing = false;
-  const close = (): void => { if (closing) return; closing = true; void server.close().finally(() => process.stdin.destroy()); };
+  const close = (): void => { if (closing) return; closing = true; void recovery.close().finally(() => server.close()).finally(() => process.stdin.destroy()); };
   process.once("SIGINT", close); process.once("SIGTERM", close); process.stdin.once("end", close);
   await server.connect(transport);
 }
@@ -48,7 +52,7 @@ async function authCommand(args: readonly string[]): Promise<void> {
   if (action !== "import") throw new Error("Unknown auth action.");
   if (!process.stdin.isTTY || !process.stdin.setRawMode) throw new Error("auth import requires an interactive terminal with hidden input.");
   const credential = await promptCredential(profile.authenticationMode);
-  await store.write(profile.credentialRef, credential);
+  await store.importCredential(profile.credentialRef, credential.class === "web-user" ? bindWebCredential(credential, profile) : credential);
   process.stderr.write(`${JSON.stringify({ subsystem: "com.thatfactory.cloudkit-mcp", event: "credentialChanged", action: "imported", profileId: profile.id, credentialClass: credential.class })}\n`);
 }
 
@@ -62,21 +66,29 @@ async function hiddenPrompt(label: string): Promise<string> {
   process.stderr.write(label); process.stdin.setRawMode?.(true); process.stdin.resume();
   return new Promise((resolvePromise, reject) => {
     let value = "";
-    const finish = (): void => { process.stdin.setRawMode?.(false); process.stdin.pause(); process.stdin.off("data", onData); process.stderr.write("\n"); value ? resolvePromise(value) : reject(new Error("Empty credential input.")); };
-    const onData = (chunk: Buffer): void => { for (const byte of chunk) { if (byte === 3) { process.stdin.setRawMode?.(false); process.exitCode = 130; reject(new Error("Credential import cancelled.")); return; } if (byte === 10 || byte === 13) { finish(); return; } if (byte === 127) value = value.slice(0, -1); else if (byte >= 32) value += String.fromCharCode(byte); } };
+    const cleanup = (): void => { process.stdin.setRawMode?.(false); process.stdin.pause(); process.stdin.off("data", onData); process.stdin.off("end", cancelled); process.stderr.write("\n"); };
+    const cancelled = (): void => { value = ""; cleanup(); reject(safeError({ code: "cancelled", message: "Credential import was cancelled locally; credentials were not changed.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Run auth import again when ready." })); };
+    const finish = (): void => { const result = value; value = ""; cleanup(); result ? resolvePromise(result) : reject(safeError({ code: "invalidInput", message: "Credential input was empty; credentials were not changed.", execution: "notStarted", sessionEffect: "unchanged", retryable: false, retryConditions: [], nextStep: "Run auth import again with the requested credential." })); };
+    const onData = (chunk: Buffer): void => { for (const byte of chunk) { if (byte === 3 || byte === 4) { cancelled(); return; } if (byte === 10 || byte === 13) { finish(); return; } if (byte === 127) value = value.slice(0, -1); else if (byte >= 32) value += String.fromCharCode(byte); } };
     process.stdin.on("data", onData);
+    process.stdin.once("end", cancelled);
   });
 }
 
-function parseCommonOptions(args: readonly string[]): CommonOptions {
+function parseCommonOptions(args: readonly string[], allowRecovery = false): CommonOptions {
   let profilesPath: string | undefined; let credentialStorePath: string | undefined;
+  let recoveryMode: "post-message" | "manual" | undefined; let recoveryPort: number | undefined;
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index]; const value = args[index + 1];
     if (flag === "--allow-writes") throw new Error("--allow-writes cannot activate any MVP behavior.");
     if (!value) throw new Error(`Missing value for ${flag ?? "argument"}.`);
-    if (flag === "--profiles") profilesPath = value; else if (flag === "--credential-store") credentialStorePath = value; else throw new Error(`Unknown flag ${flag}.`);
+    if (flag === "--profiles") profilesPath = value;
+    else if (flag === "--credential-store") credentialStorePath = value;
+    else if (allowRecovery && flag === "--recovery-mode" && (value === "post-message" || value === "manual")) recoveryMode = value;
+    else if (allowRecovery && flag === "--recovery-port" && /^\d{1,5}$/.test(value) && Number(value) <= 65535) recoveryPort = Number(value);
+    else throw new Error(`Unknown flag or invalid value for ${flag}.`);
   }
-  return { ...(profilesPath ? { profilesPath } : {}), ...(credentialStorePath ? { credentialStorePath } : {}) };
+  return { ...(profilesPath ? { profilesPath } : {}), ...(credentialStorePath ? { credentialStorePath } : {}), ...(recoveryMode ? { recoveryMode } : {}), ...(recoveryPort !== undefined ? { recoveryPort } : {}) };
 }
 
 function parseAuthOptions(args: readonly string[]): CommonOptions & { readonly profileId?: string } {
@@ -91,6 +103,6 @@ function defaultCredentialStore(): string {
   return `${base}/cloudkit-mcp/credentials`;
 }
 
-main().catch((error: unknown) => { process.stderr.write(`${JSON.stringify(sanitizeUnknownError(error))}\n`); process.exitCode = 1; });
+main().catch((error: unknown) => { process.stderr.write(`${JSON.stringify(sanitizeUnknownError(error))}\n`); process.exitCode = error instanceof CloudKitMCPError && error.details.code === "cancelled" ? 130 : 1; });
 
 export type { ProfilesDocument };

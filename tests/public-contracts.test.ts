@@ -16,9 +16,16 @@ test("public documentation retains exact high-risk tool boundaries", async () =>
     liveEvidence: { limitations: string[] };
   };
   assert.match(readme, /cloudkit:\/\/capabilities/);
-  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.2\.2/);
+  assert.match(readme, /--package=@thatfactory\/cloudkit-mcp@0\.3\.0/);
   assert.match(readme, /Documentation\/Setup\.md/);
   assert.match(readme, /Documentation\/Capabilities\.md/);
+  const troubleshooting = await readFile(new URL("../resources/troubleshooting.md", import.meta.url), "utf8");
+  assert.match(readme, /cloudkit:\/\/troubleshooting/);
+  assert.match(troubleshooting, /Act As iCloud Account/);
+  assert.match(troubleshooting, /Open Sign In Window/);
+  assert.match(troubleshooting, /Console session and the MCP credential store are independent/);
+  assert.match(troubleshooting, /Do not alter schema/);
+  assert.match(setup, /Registration does not sign in to Apple or import credentials/);
   assert.match(capabilityGuide, /`compare_views` \| Compare exact record metadata across independently authenticated and independently zone-selected views/);
   assert.deepEqual([...capabilityGuide.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]), capabilities.tools);
   assert.match(setup, /Empty `allowedTypes` makes `query_records` unavailable/);

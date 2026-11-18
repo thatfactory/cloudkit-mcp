@@ -47,6 +47,7 @@ export class DiagnosticService {
       status: "ok",
       authenticationAttempted: false,
       remoteProbeAttempted: false,
+      sessionRecovery: { mode: this.sessions.recoveryMode, tool: "recover_session", guidanceResource: "cloudkit://troubleshooting" },
       profiles: selected.map((profile) => ({
         id: profile.id,
         containerId: profile.containerId,
@@ -59,6 +60,11 @@ export class DiagnosticService {
       capabilityState: { documented: true, implemented: true, liveVerified: false, currentlyAuthorized: false },
       limitations: ["Live CloudKit capability and current authorization are established only by an explicit probe or diagnostic call."],
     };
+  }
+
+  /** Manages only local authentication state, never CloudKit data or immutable profile policy. */
+  async recoverSession(profileId: string, action: "start" | "status" | "cancel", attemptId?: string) {
+    return this.sessions.recoverSession(requireProfile(this.profiles, profileId), action, attemptId);
   }
 
   /** Performs the minimum documented current-user read for one profile and scope. */
@@ -185,7 +191,7 @@ export class DiagnosticService {
       return shareResult.data.outcome === "present" ? combined : { ...combined, status: "unavailable" as const, completeness: "notEstablished" as const };
     } catch (error) {
       if (referenceResult.sessionEffect === "rotated" && error instanceof CloudKitMCPError && error.details.sessionEffect === "unchanged") throw new CloudKitMCPError({ ...error.details, sessionEffect: "rotated" });
-      throw error;
+      throw await this.sessions.attachRecovery(profile, error);
     }
   }
 
@@ -361,7 +367,7 @@ export class DiagnosticService {
     } catch (error) {
       const code = typeof error === "object" && error !== null && "details" in error ? String((error as { details?: { code?: unknown } }).details?.code ?? "partialFailure") : "partialFailure";
       writeDiagnosticEvent({ event: "operationFailed", requestId, operation, durationMilliseconds: Date.now() - started, code });
-      throw error;
+      throw await this.sessions.attachRecovery(profile, error);
     }
   }
 
