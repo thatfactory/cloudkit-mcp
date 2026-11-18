@@ -110,5 +110,22 @@
       "Deliberate live account-switch and expiry cases were not performed because they require human reauthentication; fail-closed behavior is synthetic-only.",
       "No mutation was performed."
     ]
+  },
+  "recoveryEvidence": {
+    "status": "samePrincipalRecoveryVerified",
+    "version": "0.3.0",
+    "observedAt": "2026-11-18",
+    "environment": "development",
+    "callbackMode": "post-message",
+    "callbackOrigin": "https://cdn.apple-cloudkit.com",
+    "verified": [
+      "uncertain bound session recovered through the operator-assisted Apple Post Message flow",
+      "replacement token committed after verifying the previously bound principal",
+      "subsequent current-user probe and policy-authorized private zone listing succeeded"
+    ],
+    "limitations": [
+      "No deliberate live account switch or storage interruption was performed; failure cases remain deterministic tests.",
+      "No CloudKit data mutation was performed."
+    ]
   }
 }

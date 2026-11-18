@@ -49,4 +49,4 @@ Established web-user sessions recover through Apple's Post Message callback flow
 
 The packaged `cloudkit://troubleshooting` resource explains recovery states, manual fallback, and **CloudKit Console → Act As iCloud Account → Open Sign In Window**. Use that supported Console workflow when it answers the immediate data-inspection question. Console sign-in is independent of MCP credentials, and query-index limitations do not prove record absence.
 
-New recovery live acceptance is pending. Historical verification claims above do not certify this flow.
+Recovery was separately live verified on 2026-11-18 in Development: an uncertain bound session recovered through Apple Post Message, then a current-user probe and policy-authorized private zone listing succeeded. The callback was received from `https://cdn.apple-cloudkit.com`, distinct from the initial Apple sign-in origin. Deliberate account-switch and storage-interruption cases remain synthetically verified. Historical operation-specific claims above are unchanged.

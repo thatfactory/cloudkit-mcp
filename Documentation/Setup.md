@@ -93,7 +93,7 @@ Call `get_context` first. It reads only offline policy and static recovery guida
 
 1. The connector opens a temporary local recovery page.
 2. Click **Open Apple sign-in** and use the same Apple Account as the affected profile. Apple may ask for sign-in, two-factor verification, or consent. A browser popup permission may also be needed.
-3. The page receives the supported Apple callback directly. The connector verifies the intended principal and durably stores Apple's replacement session token.
+3. The page receives the supported Apple callback directly from CloudKit’s CDN (`https://cdn.apple-cloudkit.com`), distinct from the initial IDMSA sign-in host. The connector verifies the intended principal and durably stores Apple's replacement session token.
 4. The agent calls `recover_session` with `action: "status"`. After `succeeded`, it may retry a read proven `notStarted` once. A completed or uncertain request retains its original outcome; a fresh observation must be initiated deliberately.
 
 Tokens never need to be copied or pasted during supported recovery. Recovery does not change the profile's read permissions or switch accounts. Same-account recovery preserves the principal epoch and existing handle context; normal handle expiration still applies. Explicit account changes require manual import and invalidate the previous epoch.

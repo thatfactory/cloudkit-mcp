@@ -8,10 +8,12 @@
   let popup;
   let finished = false;
   let watcher;
+  let deadline;
   const post = (route, body) => fetch(route, { method: "POST", cache: "no-store", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const finish = (message) => {
     finished = true;
     clearInterval(watcher);
+    clearTimeout(deadline);
     window.removeEventListener("message", receive);
     signin.disabled = true;
     cancel.disabled = true;
@@ -67,6 +69,11 @@
     challenge = await response.json();
     if (finished) { challenge = undefined; return; }
     document.getElementById("context").textContent = `Profile: ${challenge.profileId} · Environment: ${challenge.environment}`;
+    deadline = setTimeout(() => {
+      if (finished) return;
+      void post("cancel").catch(() => {});
+      finish("Recovery timed out. Return to your agent to start a fresh attempt.");
+    }, Math.max(0, challenge.expiresAt - Date.now()));
     signin.disabled = false;
     status.textContent = "Ready. Open Apple sign-in to continue.";
   }).catch(() => finish("The sign-in page is no longer available. Return to your agent for recovery status."));

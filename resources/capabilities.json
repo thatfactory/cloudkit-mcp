@@ -7,7 +7,7 @@
   "authentication": {
     "serverKey": { "scopes": ["public"], "implemented": true, "liveVerifiedScopes": [] },
     "apiTokenPublic": { "scopes": ["public"], "implemented": true, "liveVerifiedScopes": ["public"] },
-    "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerifiedScopes": ["private", "shared"], "rotation": "single-request-transaction" }
+    "webUser": { "scopes": ["public", "private", "shared"], "implemented": true, "liveVerifiedScopes": ["private", "shared"], "rotation": "single-request-transaction", "recovery": { "callbackMode": "post-message", "callbackOrigin": "https://cdn.apple-cloudkit.com", "implemented": true, "liveVerified": true, "lastObservedAt": "2026-11-18" } }
   },
   "backendOperations": [
     { "id": "probeCurrentUser", "implementationStatus": "implemented", "documentedScopes": ["public", "private", "shared"], "unverifiedScopes": [], "liveVerificationStatus": "verified", "liveVerifiedScopes": ["public", "private", "shared"], "lastObservedAt": "2026-09-14" },
@@ -46,7 +46,7 @@
     "Change feeds have live evidence in shared scope; private-scope change behavior remains live-unverified.",
     "Shared-zone listing and lookup remain disabled until separately live verified.",
     "Shared subscription listing remains disabled until separately live verified.",
-    "Web-user recovery supports Apple Post Message callbacks through a local browser; missing principal bindings and unsupported callback configurations require hidden-terminal auth import. Recovery live acceptance is pending for this release.",
+    "Web-user recovery supports Apple Post Message callbacks through a local browser; missing principal bindings and unsupported callback configurations require hidden-terminal auth import. Same-principal recovery and subsequent private reads were live verified on 2026-11-18.",
     "App-local CKSyncEngine state, upload queues, notification delivery, mutation, invitation acceptance, and asset downloads are unavailable."
   ]
 }

@@ -65,6 +65,7 @@ test("an oversized or malformed callback fails closed", async () => {
 });
 
 async function browser() {
+  let expire: (() => void) | undefined;
   const handlers = new Map<string, (event?: any) => any>(); const calls: Array<{ route: string; body?: string }> = [];
   const elements = new Map(["signin", "cancel", "status", "context"].map((id) => [id, { disabled: false, textContent: "", addEventListener: (_event: string, handler: (event?: any) => any) => handlers.set(id, handler), click: () => handlers.get(id)?.() }]));
   const popup = { closed: false, close: () => { popup.closed = true; } };
@@ -74,11 +75,12 @@ async function browser() {
     document: { getElementById: (id: string) => elements.get(id) },
     window: { location: { origin: "http://127.0.0.1:8765" }, addEventListener: (name: string, handler: (event?: any) => any) => handlers.set(name, handler), removeEventListener: () => {}, open: () => popup },
     navigator: { sendBeacon: () => {} }, setInterval: () => 1, clearInterval: () => {},
-    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com", callbackOrigins: ["https://cdn.apple-cloudkit.com"] }) }; },
+    setTimeout: (callback: () => void) => { expire = callback; return 1; }, clearTimeout: () => {},
+    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com", callbackOrigins: ["https://cdn.apple-cloudkit.com"], expiresAt: Date.now() + 600_000 }) }; },
   });
   await new Promise((done) => setImmediate(done));
   handlers.get("signin")!();
-  return { send: handlers.get("message")!, popup, calls, elements };
+  return { send: handlers.get("message")!, popup, calls, elements, expire: () => expire!() };
 }
 
 test("trusted page rejects wrong source, wrong origin and conflicting fields; accepts each Apple token shape once", async () => {
@@ -119,4 +121,11 @@ test("callback diagnostics omit query, path, token and untrusted hostnames", asy
     assert.equal(invalid.body!.includes("synthetic-fresh"), false);
     assert.equal(JSON.parse(invalid.body!).callbackHost, undefined);
   }
+});
+
+test("browser deadline closes the popup and stops accepting callbacks", async () => {
+  const b = await browser(); b.expire();
+  assert.equal(b.popup.closed, true); assert.match(b.elements.get("status")!.textContent, /timed out/);
+  await b.send({ source: b.popup, origin: "https://cdn.apple-cloudkit.com", data: { ckSession: "synthetic-fresh" } });
+  assert.equal(b.calls.some((call) => call.route === "token"), false);
 });

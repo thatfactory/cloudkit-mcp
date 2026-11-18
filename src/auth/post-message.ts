@@ -56,7 +56,7 @@ export class PostMessageProvider implements RecoveryProvider {
       const route = request.url.slice(path.length);
       if (request.method === "GET" && route === "") { response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end(html); return; }
       if (request.method === "GET" && route === "client.js") { response.setHeader("Content-Type", "text/javascript; charset=utf-8"); response.end(script); return; }
-      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, callbackOrigins: [POST_MESSAGE_ORIGIN], profileId: profile.id, environment: profile.environment })); return; }
+      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, callbackOrigins: [POST_MESSAGE_ORIGIN], expiresAt: credential.recovery?.expiresAt ?? Date.now() + 10 * 60 * 1000, profileId: profile.id, environment: profile.environment })); return; }
       if (request.method !== "POST" || request.headers.origin !== origin || !["token", "cancel", "invalid"].includes(route)) { response.writeHead(403).end(); return; }
       if (settled) { response.writeHead(409).end(); return; }
       if (route === "cancel") { response.writeHead(204).end(); fail("operatorCancelled"); return; }
