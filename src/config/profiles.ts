@@ -53,11 +53,15 @@ const profilesDocumentSchema = z
   .strict()
   .superRefine((document, context) => {
     const seen = new Set<string>();
+    const slots = new Map<string, string>();
     document.profiles.forEach((profile, index) => {
       if (seen.has(profile.id)) {
         context.addIssue({ code: "custom", message: "profile id must be unique", path: ["profiles", index, "id"] });
       }
       seen.add(profile.id);
+      const binding = `${profile.containerId}:${profile.environment}:${profile.authenticationMode}`;
+      if (slots.has(profile.credentialRef) && slots.get(profile.credentialRef) !== binding) context.addIssue({ code: "custom", message: "a credentialRef cannot cross container, environment or authentication boundaries", path: ["profiles", index, "credentialRef"] });
+      slots.set(profile.credentialRef, binding);
     });
   });
 

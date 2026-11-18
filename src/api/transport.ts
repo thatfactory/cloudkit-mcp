@@ -3,6 +3,7 @@ import { CloudKitMCPError, safeError, type SafeError } from "../errors.js";
 import type { AuthenticationMode, DatabaseScope } from "../domain/types.js";
 import { operationPolicy, type OperationId } from "./operations.js";
 import { signServerKeyRequest, type ServerKeyCredential } from "./signing.js";
+import { RecoveryFailure } from "../auth/recovery-types.js";
 
 const CLOUDKIT_ORIGIN = "https://api.apple-cloudkit.com";
 const identifierPattern = /^[A-Za-z0-9._:-]+$/;
@@ -49,6 +50,7 @@ export class CloudKitTransport {
     credential: TransportCredential,
     body: unknown,
     parentSignal?: AbortSignal,
+    requestOrigin?: string,
   ): Promise<TransportResult> {
     const policy = operationPolicy(operationId);
     validateContext(context);
@@ -70,6 +72,12 @@ export class CloudKitTransport {
     }
     const url = buildURL(policy.path, context, credential);
     const headers: Record<string, string> = { Accept: "application/json" };
+    if (requestOrigin !== undefined) {
+      let local;
+      try { local = new URL(requestOrigin); } catch { throw new RecoveryFailure("configurationMismatch"); }
+      if (local.protocol !== "http:" || local.hostname !== "127.0.0.1" || local.origin !== requestOrigin) throw new RecoveryFailure("configurationMismatch");
+      headers.Origin = requestOrigin;
+    }
     if (policy.method === "POST") headers["Content-Type"] = "application/json";
     if (credential.mode === "server-key") {
       Object.assign(headers, signServerKeyRequest(credential.serverKey, encodedBody, `${url.pathname}${url.search}`, this.now()));
@@ -133,6 +141,19 @@ export class CloudKitTransport {
     } finally {
       release();
     }
+  }
+
+  /** Authentication challenge only; no authenticated token or database content is requested. */
+  async authorizationChallenge(context: Omit<TransportContext, "scope">, apiToken: string, origin: string, signal: AbortSignal): Promise<{ url: string; origin: string }> {
+    const result = await this.execute("probeCurrentUser", { ...context, scope: "public" }, { mode: "api-token-public", apiToken }, {}, signal, origin);
+    if (result.error || !isAuthenticationChallenge(result.body)) throw new RecoveryFailure("authorizationFailed");
+    const raw = (result.body as { redirectURL: string }).redirectURL;
+    if (raw.length > 16 * 1024) throw new RecoveryFailure("authorizationFailed");
+    let url;
+    try { url = new URL(raw); } catch { throw new RecoveryFailure("authorizationFailed"); }
+    // Browser navigation is separate from the fixed-origin CloudKit transport. Never follow an arbitrary challenge.
+    if (url.protocol !== "https:" || url.username || url.password || url.port || !["idmsa.apple.com", "www.icloud.com", "icloud.com", "api.apple-cloudkit.com"].includes(url.hostname)) throw new RecoveryFailure("authorizationFailed");
+    return { url: url.href, origin: url.origin };
   }
 }
 

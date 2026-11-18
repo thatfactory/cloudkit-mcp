@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "server": "cloudkit-mcp",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "remoteDataEffect": "none",
   "backend": "cloudkit-web-services",
   "authentication": {
@@ -22,6 +22,7 @@
   "tools": [
     "get_context",
     "probe_access",
+    "recover_session",
     "list_zones",
     "get_zone",
     "get_records",
@@ -45,7 +46,7 @@
     "Change feeds have live evidence in shared scope; private-scope change behavior remains live-unverified.",
     "Shared-zone listing and lookup remain disabled until separately live verified.",
     "Shared subscription listing remains disabled until separately live verified.",
-    "Authentication login/callback automation is not implemented; auth import accepts an already-acquired token through a hidden terminal prompt.",
+    "Web-user recovery supports Apple Post Message callbacks through a local browser; missing principal bindings and unsupported callback configurations require hidden-terminal auth import. Recovery live acceptance is pending for this release.",
     "App-local CKSyncEngine state, upload queues, notification delivery, mutation, invitation acceptance, and asset downloads are unavailable."
   ]
 }

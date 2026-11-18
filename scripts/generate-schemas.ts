@@ -30,7 +30,7 @@ const policy = JSON.parse(await readFile(new URL("../contracts/operation-policy.
     lastObservedAt?: string;
   }>;
 };
-const expectedTools = ["get_context", "probe_access", "list_zones", "get_zone", "get_records", "query_records", "read_record_fields", "get_share", "list_subscriptions", "get_database_changes", "get_zone_changes", "compare_views"];
+const expectedTools = ["get_context", "probe_access", "recover_session", "list_zones", "get_zone", "get_records", "query_records", "read_record_fields", "get_share", "list_subscriptions", "get_database_changes", "get_zone_changes", "compare_views"];
 if (capabilities.version !== packageDocument.version) throw new Error("capability version does not match package version");
 if (JSON.stringify(capabilities.tools) !== JSON.stringify(expectedTools)) throw new Error("capability tool registry is inconsistent");
 if (Object.values(capabilities.authentication).some(({ implemented, liveVerifiedScopes }) => implemented !== true || !Array.isArray(liveVerifiedScopes))) throw new Error("authentication capability evidence is inconsistent");

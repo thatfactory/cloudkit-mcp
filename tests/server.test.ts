@@ -20,7 +20,9 @@ test("offline MCP discovery never touches credentials or network", async () => {
     const tools = await client.listTools();
     const capabilities = JSON.parse(await readFile(new URL("../resources/capabilities.json", import.meta.url), "utf8")) as { tools: string[] };
     assert.deepEqual(tools.tools.map((tool) => tool.name), capabilities.tools);
-    assert.equal(tools.tools.every((tool) => tool.annotations?.readOnlyHint === true), true);
+    assert.equal(tools.tools.filter((tool) => tool.name !== "recover_session").every((tool) => tool.annotations?.readOnlyHint === true), true);
+    assert.equal(tools.tools.find((tool) => tool.name === "recover_session")?.annotations?.readOnlyHint, false);
+    assert.equal(tools.tools.find((tool) => tool.name === "recover_session")?.annotations?.idempotentHint, false);
     assert.match(tools.tools.find((tool) => tool.name === "probe_access")?.description ?? "", /authentication\/current-principal/);
     assert.match(tools.tools.find((tool) => tool.name === "probe_access")?.description ?? "", /challenge without database access/);
     const properties = (name: string) => Object.keys((tools.tools.find((tool) => tool.name === name)?.inputSchema as { properties?: Record<string, unknown> }).properties ?? {});
@@ -51,7 +53,9 @@ test("offline MCP discovery never touches credentials or network", async () => {
     const context = await client.callTool({ name: "get_context", arguments: {} });
     assert.equal(context.isError, undefined);
     const resources = await client.listResources();
-    assert.deepEqual(resources.resources.map((resource) => resource.uri).sort(), ["cloudkit://capabilities", "cloudkit://schemas/profiles", "cloudkit://schemas/result-envelope"]);
+    assert.deepEqual(resources.resources.map((resource) => resource.uri).sort(), ["cloudkit://capabilities", "cloudkit://schemas/profiles", "cloudkit://schemas/result-envelope", "cloudkit://troubleshooting"]);
+    const guidance = await client.readResource({ uri: "cloudkit://troubleshooting" });
+    assert.match(String(guidance.contents[0]?.text), /Act As iCloud Account/);
     assert.equal(networkCalls, 0);
   } finally { await client.close(); await server.close(); }
 });

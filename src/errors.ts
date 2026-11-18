@@ -1,4 +1,5 @@
 import type { ExecutionStatus, ResultContext, SessionEffect } from "./domain/types.js";
+import type { RecoveryStatus } from "./auth/recovery-types.js";
 
 /** Stable error codes safe to expose through MCP. */
 export const errorCodes = [
@@ -39,6 +40,7 @@ export interface SafeError {
   readonly retryConditions: readonly string[];
   readonly nextStep: string;
   readonly context?: ResultContext;
+  readonly recovery?: RecoveryStatus & { readonly requestRetry: "retryNotStartedOnce" | "freshObservationRequired" };
 }
 
 /** Error carrying only explicitly constructed, privacy-safe fields. */

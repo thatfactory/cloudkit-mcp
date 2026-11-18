@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloudKit session recovery</title>
+<style>
+  :root { color-scheme: light dark; font: 17px system-ui, sans-serif; }
+  body { max-width: 38rem; margin: 12vh auto; padding: 1.5rem; line-height: 1.6; }
+  button { font: inherit; padding: .7rem 1rem; margin: .5rem .5rem .5rem 0; cursor: pointer; }
+</style>
+<h1>Recover your CloudKit session</h1>
+<p id="context"></p>
+<p>Sign in with the same Apple Account used by this diagnostic profile. Apple handles your sign-in and verification. The connector receives and saves the session securely.</p>
+<button id="signin" disabled>Open Apple sign-in</button>
+<button id="cancel">Cancel recovery</button>
+<p id="status" role="status">Preparing Apple sign-in…</p>
+<p>If this sign-in cannot complete, return to your agent. CloudKit Console’s <strong>Act As iCloud Account</strong> can help inspect the intended account’s data.</p>
+<script src="client.js" defer></script>
+</html>

@@ -28,4 +28,4 @@ for (const file of report.files) {
   if (!allowedTopLevel.has(top)) throw new Error(`unexpected package file: ${file.path}`);
   if (/\.map$/.test(file.path) || /(?<!\.d)\.ts$/.test(file.path) || /(?:^|\/)(?:fixtures?|contracts?|tests?)(?:\/|$)/i.test(file.path)) throw new Error(`unsafe package file: ${file.path}`);
 }
-for (const required of ["dist/index.js", "resources/capabilities.json", "package.json", "README.md", "LICENSE"]) if (!report.files.some((file) => file.path === required)) throw new Error(`missing package file: ${required}`);
+for (const required of ["dist/index.js", "resources/capabilities.json", "resources/troubleshooting.md", "resources/recovery-page.html", "resources/recovery-page.js", "package.json", "README.md", "LICENSE"]) if (!report.files.some((file) => file.path === required)) throw new Error(`missing package file: ${required}`);

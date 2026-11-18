@@ -38,7 +38,7 @@ test("web-user response without replacement makes the slot uncertain and does no
   const transport = new CloudKitTransport(async () => new Response("{}", { status: 200 }));
   await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /did not yield a durable replacement/);
   const saved = await store.read("owner");
-  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, "old");
+  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, undefined);
   assert.equal(saved.generation, 0);
   assert.equal(saved.class === "web-user" && saved.uncertain, true);
   await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /marked uncertain/);
@@ -58,7 +58,7 @@ test("web-user probe fails closed when the authenticated account changes", async
   const saved = await store.read("owner");
   assert.equal(saved.class, "web-user");
   if (saved.class !== "web-user") return;
-  assert.equal(saved.webAuthenticationToken, "replacement-for-different-account");
+  assert.equal(saved.webAuthenticationToken, undefined);
   assert.equal(saved.generation, 8);
   assert.equal(saved.principalEpoch, "original-epoch");
   assert.equal(saved.principalRecordName, "original-principal");
@@ -118,19 +118,19 @@ test("401 without replacement preserves expiry diagnosis and suspends the slot",
   const root = await mkdtemp(join(tmpdir(), "cloudkit-session-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
   const store = new CredentialStore(root); await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
   const transport = new CloudKitTransport(async () => new Response("{}", { status: 401 }));
-  await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /rejected the configured authentication/);
+  await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /rejected the configured authentication|rejected the authenticated session/);
   const saved = await store.read("owner");
   assert.equal(saved.class === "web-user" && saved.uncertain, true);
   assert.equal(saved.generation, 0);
 });
 
-test("401 with replacement commits rotation while preserving expiry diagnosis", async (context) => {
+test("401 with replacement suspends the rejected session while preserving expiry diagnosis", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-session-")); context.after(async () => { const { rm } = await import("node:fs/promises"); await rm(root, { recursive: true, force: true }); });
   const store = new CredentialStore(root); await store.write("owner", { schemaVersion: 1, class: "web-user", apiToken: "api", webAuthenticationToken: "session", generation: 0, principalEpoch: "epoch" });
   const transport = new CloudKitTransport(async () => new Response("{}", { status: 401, headers: { "x-apple-cloudkit-web-auth-token": "replacement" } }));
-  await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /rejected the configured authentication/);
+  await assert.rejects(new SessionManager(store, transport).execute(profile, "private", "lookupRecords", {}), /rejected the configured authentication|rejected the authenticated session/);
   const saved = await store.read("owner");
-  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, "replacement");
-  assert.equal(saved.class === "web-user" && saved.uncertain, false);
+  assert.equal(saved.class === "web-user" && saved.webAuthenticationToken, undefined);
+  assert.equal(saved.class === "web-user" && saved.uncertain, true);
   assert.equal(saved.generation, 1);
 });

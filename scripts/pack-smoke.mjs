@@ -20,8 +20,13 @@ try {
   if (version.stdout.trim() !== installedPackage.version) throw new Error("external binary version mismatch");
   const help = await execute(binary, ["--help"], { cwd: temporary });
   if (!help.stdout.includes("The server is read-only")) throw new Error("external binary help mismatch");
+  if (!help.stdout.includes("--recovery-mode post-message|manual") || !help.stdout.includes("--recovery-port")) throw new Error("external recovery options missing");
   const capabilities = JSON.parse(await readFile(join(temporary, "node_modules", "@thatfactory", "cloudkit-mcp", "resources", "capabilities.json"), "utf8"));
   if (capabilities.remoteDataEffect !== "none") throw new Error("packaged read-only invariant mismatch");
+  if (!capabilities.tools.includes("recover_session")) throw new Error("packaged recovery tool missing");
+  const resourceRoot = join(temporary, "node_modules", "@thatfactory", "cloudkit-mcp", "resources");
+  if (!(await readFile(join(resourceRoot, "troubleshooting.md"), "utf8")).includes("Act As iCloud Account")) throw new Error("packaged account inspection guidance missing");
+  if (!(await readFile(join(resourceRoot, "recovery-page.html"), "utf8")).includes("client.js") || !(await readFile(join(resourceRoot, "recovery-page.js"), "utf8")).includes("event.source !== popup")) throw new Error("packaged callback page missing");
   if (!suppliedTarball) await rm(tarball, { force: true });
 } finally {
   await rm(temporary, { recursive: true, force: true });
