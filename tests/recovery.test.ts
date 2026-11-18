@@ -20,15 +20,16 @@ const seed: WebUserCredential = { schemaVersion: 1, class: "web-user", apiToken:
 
 async function fixture(context: TestContext, input = seed) {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-recovery-"));
-  const cleanups: Array<() => void | Promise<unknown>> = [];
-  const onCleanup = (cleanup: () => void | Promise<unknown>): void => { cleanups.push(cleanup); };
+  const cleanups: Array<() => void | Promise<void>> = [];
   context.after(async () => {
-    // Recovery can still write while closing, so drain resources before removing their store.
-    for (const cleanup of cleanups) await cleanup();
-    await rm(root, { recursive: true, force: true });
+    try {
+      for (const cleanup of cleanups.reverse()) await cleanup();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
   const store = new CredentialStore(root); await store.write("owner", input);
-  return { root, store, onCleanup };
+  return { root, store, onCleanup: (cleanup: () => void | Promise<void>) => cleanups.push(cleanup) };
 }
 
 function handoff() {
@@ -70,7 +71,8 @@ test("recovery coalesces stores and processes, hands off sign-in, verifies and c
   const { root, store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
   const first = new RecoveryCoordinator(store, remote.transport, flow.provider);
   const second = new RecoveryCoordinator(new CredentialStore(root), remote.transport, flow.provider);
-  onCleanup(() => Promise.all([first.close(), second.close()]));
+  onCleanup(() => first.close());
+  onCleanup(() => second.close());
   const statuses = await Promise.all([first.start(profile), second.start(profile)]);
   assert.equal(statuses[0].attemptId, statuses[1].attemptId);
   await state(first, "awaitingUser"); assert.equal(flow.calls(), 1);
@@ -182,7 +184,9 @@ test("a killed rotating request leaves durable suspension and its proven-dead le
   const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script, root], { stdio: ["ignore", "pipe", "pipe"] });
   onCleanup(async () => {
     if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+    const exit = once(child, "exit");
+    child.kill("SIGKILL");
+    await exit;
   });
   const dispatched = await once(child.stdout!, "data"); assert.match(String(dispatched[0]), /dispatched/);
   const exiting = once(child, "exit"); child.kill("SIGKILL"); await exiting;
