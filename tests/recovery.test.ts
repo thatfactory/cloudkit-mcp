@@ -20,9 +20,15 @@ const seed: WebUserCredential = { schemaVersion: 1, class: "web-user", apiToken:
 
 async function fixture(context: TestContext, input = seed) {
   const root = await mkdtemp(join(tmpdir(), "cloudkit-recovery-"));
-  context.after(() => rm(root, { recursive: true, force: true }));
+  const cleanups: Array<() => void | Promise<unknown>> = [];
+  const onCleanup = (cleanup: () => void | Promise<unknown>): void => { cleanups.push(cleanup); };
+  context.after(async () => {
+    // Recovery can still write while closing, so drain resources before removing their store.
+    for (const cleanup of cleanups) await cleanup();
+    await rm(root, { recursive: true, force: true });
+  });
   const store = new CredentialStore(root); await store.write("owner", input);
-  return { root, store };
+  return { root, store, onCleanup };
 }
 
 function handoff() {
@@ -61,10 +67,10 @@ async function state(coordinator: RecoveryCoordinator, expected: string) {
 }
 
 test("recovery coalesces stores and processes, hands off sign-in, verifies and commits the replacement", async (context) => {
-  const { root, store } = await fixture(context); const flow = handoff(); const remote = verifier();
+  const { root, store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
   const first = new RecoveryCoordinator(store, remote.transport, flow.provider);
   const second = new RecoveryCoordinator(new CredentialStore(root), remote.transport, flow.provider);
-  context.after(() => Promise.all([first.close(), second.close()]));
+  onCleanup(() => Promise.all([first.close(), second.close()]));
   const statuses = await Promise.all([first.start(profile), second.start(profile)]);
   assert.equal(statuses[0].attemptId, statuses[1].attemptId);
   await state(first, "awaitingUser"); assert.equal(flow.calls(), 1);
@@ -87,8 +93,8 @@ test("recovery coalesces stores and processes, hands off sign-in, verifies and c
 });
 
 test("automatic recovery preserves notStarted versus dispatched execution and never replays a read", async (context) => {
-  const { store } = await fixture(context); const flow = handoff(); const remote = verifier();
-  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => coordinator.close());
+  const { store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
+  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => coordinator.close());
   const sessions = new SessionManager(store, remote.transport, coordinator);
   await assert.rejects(sessions.execute(profile, "private", "lookupRecords", {}), (error: any) => {
     assert.equal(error.details.execution, "notStarted"); assert.equal(error.details.recovery.requestRetry, "retryNotStartedOnce"); return true;
@@ -96,7 +102,7 @@ test("automatic recovery preserves notStarted versus dispatched execution and ne
   await state(coordinator, "awaitingUser");
   flow.token.resolve({ token: "synthetic-fresh" }); await state(coordinator, "succeeded"); assert.equal(remote.calls(), 1);
   const secondFlow = handoff(); const failure = new CloudKitTransport(async () => { throw new Error("synthetic private provider value"); });
-  const next = new RecoveryCoordinator(store, failure, secondFlow.provider); context.after(() => next.close());
+  const next = new RecoveryCoordinator(store, failure, secondFlow.provider); onCleanup(() => next.close());
   await assert.rejects(new SessionManager(store, failure, next).execute(profile, "private", "lookupRecords", {}), (error: any) => {
     assert.equal(error.details.execution, "uncertain"); assert.equal(error.details.recovery.requestRetry, "freshObservationRequired");
     assert.equal(JSON.stringify(error.details).includes("synthetic private provider value"), false); return true;
@@ -105,9 +111,9 @@ test("automatic recovery preserves notStarted versus dispatched execution and ne
 });
 
 for (const scenario of ["principalMismatch", "verificationFailed"] as const) test(`${scenario} leaves the intended binding suspended and requires explicit restart`, async (context) => {
-  const { store } = await fixture(context); const flow = handoff();
+  const { store, onCleanup } = await fixture(context); const flow = handoff();
   const remote = verifier(scenario === "principalMismatch" ? "different-synthetic-principal" : "synthetic-principal", scenario !== "verificationFailed");
-  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => coordinator.close());
+  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => coordinator.close());
   await coordinator.start(profile); await state(coordinator, "awaitingUser"); flow.token.resolve({ token: "synthetic-fresh" });
   assert.equal((await state(coordinator, "failed")).reason, scenario);
   const saved = await store.read("owner"); assert.equal(saved.class === "web-user" && saved.principalRecordName, seed.principalRecordName); assert.equal((await store.status("owner")).usable, false);
@@ -116,8 +122,8 @@ for (const scenario of ["principalMismatch", "verificationFailed"] as const) tes
 });
 
 test("cancellation is bound to the selected slot and closes the running attempt", async (context) => {
-  const { store } = await fixture(context); const flow = handoff(); const remote = verifier();
-  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => coordinator.close());
+  const { store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
+  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => coordinator.close());
   const started = await coordinator.start(profile); await state(coordinator, "awaitingUser");
   await assert.rejects(coordinator.cancel(profile, undefined)); await assert.rejects(coordinator.cancel(profile, "a".repeat(36)));
   assert.equal((await coordinator.cancel(profile, started.attemptId)).state, "cancelled");
@@ -126,13 +132,13 @@ test("cancellation is bound to the selected slot and closes the running attempt"
 });
 
 test("status stays responsive and local cancellation interrupts an in-flight verification", { timeout: 5_000 }, async (context) => {
-  const { store } = await fixture(context); const flow = handoff();
+  const { store, onCleanup } = await fixture(context); const flow = handoff();
   const dispatched = Promise.withResolvers<void>();
   const remote = new CloudKitTransport(async (_input, init) => {
     dispatched.resolve();
     return new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new Error("synthetic aborted probe")), { once: true }));
   });
-  const coordinator = new RecoveryCoordinator(store, remote, flow.provider); context.after(() => coordinator.close());
+  const coordinator = new RecoveryCoordinator(store, remote, flow.provider); onCleanup(() => coordinator.close());
   const started = await coordinator.start(profile); await state(coordinator, "awaitingUser"); flow.token.resolve({ token: "synthetic-fresh" });
   await dispatched.promise;
   assert.equal((await coordinator.status(profile)).state, "verifying");
@@ -141,15 +147,15 @@ test("status stays responsive and local cancellation interrupts an in-flight ver
 });
 
 test("recovery deadline closes human handoff and leaves a terminal safe status", async (context) => {
-  const { store } = await fixture(context); const flow = handoff();
-  const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider, 100); context.after(() => coordinator.close());
+  const { store, onCleanup } = await fixture(context); const flow = handoff();
+  const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider, 100); onCleanup(() => coordinator.close());
   await coordinator.start(profile); const result = await state(coordinator, "failed"); assert.equal(result.reason, "timedOut");
   assert.equal((await store.status("owner")).usable, false);
 });
 
 for (const change of ["import", "remove"] as const) test(`a newer ${change} wins over a late callback`, async (context) => {
-  const { store } = await fixture(context); const flow = handoff(); const remote = verifier();
-  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => coordinator.close());
+  const { store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
+  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => coordinator.close());
   await coordinator.start(profile); await state(coordinator, "awaitingUser");
   if (change === "import") await store.importCredential("owner", { ...seed, uncertain: false, principalEpoch: "new-epoch", webAuthenticationToken: "new-import" });
   else await store.remove("owner");
@@ -160,8 +166,8 @@ for (const change of ["import", "remove"] as const) test(`a newer ${change} wins
 });
 
 test("interrupted final storage retains configuration, removes the token and does not claim success", async (context) => {
-  const { root } = await fixture(context); const store = new CredentialStore(root, async () => { throw new Error("synthetic filesystem detail"); });
-  const flow = handoff(); const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider); context.after(() => coordinator.close());
+  const { root, onCleanup } = await fixture(context); const store = new CredentialStore(root, async () => { throw new Error("synthetic filesystem detail"); });
+  const flow = handoff(); const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider); onCleanup(() => coordinator.close());
   await coordinator.start(profile); await state(coordinator, "awaitingUser"); flow.token.resolve({ token: "synthetic-fresh" });
   assert.equal((await state(coordinator, "failed")).reason, "storageFailed");
   const saved = await new CredentialStore(root).read("owner"); assert.equal(saved.class, "web-user"); if (saved.class !== "web-user") return;
@@ -170,21 +176,24 @@ test("interrupted final storage retains configuration, removes the token and doe
 });
 
 test("a killed rotating request leaves durable suspension and its proven-dead lease can be reclaimed", { timeout: 10_000 }, async (context) => {
-  const { root, store } = await fixture(context, { ...seed, uncertain: false });
+  const { root, store, onCleanup } = await fixture(context, { ...seed, uncertain: false });
   const url = (name: string) => new URL(`../src/${name}.ts`, import.meta.url).href;
   const script = `import {SessionManager} from ${JSON.stringify(url("auth/session"))}; import {CredentialStore} from ${JSON.stringify(url("auth/credential-store"))}; import {CloudKitTransport} from ${JSON.stringify(url("api/transport"))}; const t=new CloudKitTransport(async()=>{process.stdout.write('dispatched\\n'); await new Promise(()=>setInterval(()=>{},1000)); return new Response('{}')}); await new SessionManager(new CredentialStore(process.argv[1]),t).execute(${JSON.stringify(profile)},'private','lookupRecords',{});`;
   const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script, root], { stdio: ["ignore", "pipe", "pipe"] });
-  context.after(() => { child.kill("SIGKILL"); });
+  onCleanup(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+  });
   const dispatched = await once(child.stdout!, "data"); assert.match(String(dispatched[0]), /dispatched/);
   const exiting = once(child, "exit"); child.kill("SIGKILL"); await exiting;
   const suspended = await store.read("owner"); assert.equal(suspended.class === "web-user" && suspended.webAuthenticationToken, undefined);
-  const flow = handoff(); const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider); context.after(() => coordinator.close());
+  const flow = handoff(); const coordinator = new RecoveryCoordinator(store, verifier().transport, flow.provider); onCleanup(() => coordinator.close());
   await coordinator.start(profile); await state(coordinator, "awaitingUser"); flow.token.resolve({ token: "synthetic-fresh" }); await state(coordinator, "succeeded");
 });
 
 test("same-account recovery preserves handle context while explicit import changes its epoch", async (context) => {
-  const { store } = await fixture(context); const flow = handoff(); const remote = verifier();
-  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => coordinator.close());
+  const { store, onCleanup } = await fixture(context); const flow = handoff(); const remote = verifier();
+  const coordinator = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => coordinator.close());
   const sessions = new SessionManager(store, remote.transport, coordinator); const handles = new HandleRegistry();
   const handleContext = { profileId: profile.id, containerId: profile.containerId, environment: profile.environment, scope: "private" as const, backend: profile.backend, principalEpoch: seed.principalEpoch, operation: "test", selectorDigest: "selector" };
   const handle = handles.issue("test", handleContext, "synthetic-cursor");
@@ -195,9 +204,9 @@ test("same-account recovery preserves handle context while explicit import chang
 });
 
 test("manual-only, unbound and incompatible configurations never launch a browser", async (context) => {
-  const { store } = await fixture(context); const remote = verifier(); const flow = handoff();
+  const { store, onCleanup } = await fixture(context); const remote = verifier(); const flow = handoff();
   const manual = new RecoveryCoordinator(store, remote.transport); assert.equal((await manual.start(profile)).reason, "manualMode");
-  const automatic = new RecoveryCoordinator(store, remote.transport, flow.provider); context.after(() => automatic.close());
+  const automatic = new RecoveryCoordinator(store, remote.transport, flow.provider); onCleanup(() => automatic.close());
   await store.importCredential("owner", { schemaVersion: 1, class: "web-user", apiToken: "synthetic-api", webAuthenticationToken: "synthetic-token", generation: 0, principalEpoch: "unbound", uncertain: true });
   assert.equal((await automatic.start(profile)).reason, "principalUnbound");
   await store.importCredential("owner", bindWebCredential(seed, { ...profile, environment: "production" }));
