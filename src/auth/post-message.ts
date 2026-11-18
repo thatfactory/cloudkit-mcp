@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import type { Profile } from "../domain/types.js";
 import { CloudKitTransport } from "../api/transport.js";
 import type { WebUserCredential } from "./credential-store.js";
-import { RecoveryFailure } from "./recovery-types.js";
+import { callbackOriginClasses, publicAppleHost, RecoveryFailure, type CallbackOrigin } from "./recovery-types.js";
 
 export interface RecoveryProvider {
   authorize(profile: Profile, credential: WebUserCredential, signal: AbortSignal, awaitingUser: () => Promise<void>): Promise<{ token: string; origin?: string }>;
@@ -39,7 +39,7 @@ export class PostMessageProvider implements RecoveryProvider {
     let origin = "";
     let challenge: { url: string; origin: string } | undefined;
     let settled = false;
-    const fail = (reason: "operatorCancelled" | "invalidCallback") => { if (!settled) { settled = true; rejectToken(new RecoveryFailure(reason)); } };
+    const fail = (reason: "operatorCancelled" | "invalidCallback" | "callbackOriginMismatch" | "authorizationFailed", callbackOrigin?: CallbackOrigin, callbackHost?: string) => { if (!settled) { settled = true; rejectToken(new RecoveryFailure(reason, callbackOrigin, callbackHost)); } };
     const server = createServer((request, response) => { void handle(request, response).catch(() => { fail("invalidCallback"); if (!response.headersSent) response.writeHead(400); response.end(); }); });
     server.requestTimeout = 5_000;
     server.headersTimeout = 5_000;
@@ -53,10 +53,11 @@ export class PostMessageProvider implements RecoveryProvider {
       const route = request.url.slice(path.length);
       if (request.method === "GET" && route === "") { response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end(html); return; }
       if (request.method === "GET" && route === "client.js") { response.setHeader("Content-Type", "text/javascript; charset=utf-8"); response.end(script); return; }
-      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, profileId: profile.id, environment: profile.environment })); return; }
+      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, callbackOrigins: [challenge.origin, "https://api.apple-cloudkit.com"], profileId: profile.id, environment: profile.environment })); return; }
       if (request.method !== "POST" || request.headers.origin !== origin || !["token", "cancel", "invalid"].includes(route)) { response.writeHead(403).end(); return; }
       if (settled) { response.writeHead(409).end(); return; }
-      if (route === "cancel" || route === "invalid") { response.writeHead(204).end(); fail(route === "cancel" ? "operatorCancelled" : "invalidCallback"); return; }
+      if (route === "cancel") { response.writeHead(204).end(); fail("operatorCancelled"); return; }
+      if (route === "invalid" && request.headers["content-type"] !== "application/json") { response.writeHead(204).end(); fail("invalidCallback"); return; }
       if (request.headers["content-type"] !== "application/json") { response.writeHead(415).end(); fail("invalidCallback"); return; }
       const chunks: Buffer[] = []; let size = 0;
       for await (const chunk of request) {
@@ -65,6 +66,10 @@ export class PostMessageProvider implements RecoveryProvider {
         chunks.push(bytes);
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+      if (route === "invalid") {
+        const originClass = callbackOriginClasses.some((kind) => kind === body.originClass) ? body.originClass as CallbackOrigin : "other";
+        response.writeHead(204).end(); fail(body.check === "origin" ? "callbackOriginMismatch" : body.check === "provider" ? "authorizationFailed" : "invalidCallback", originClass, publicAppleHost(body.callbackHost) ? body.callbackHost : undefined); return;
+      }
       if (Object.keys(body).length !== 1 || typeof body.token !== "string" || body.token.length < 1 || body.token.length > 4096) { response.writeHead(400).end(); fail("invalidCallback"); return; }
       if (settled || signal.aborted) { response.writeHead(409).end(); return; }
       settled = true;

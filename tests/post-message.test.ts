@@ -70,10 +70,11 @@ async function browser() {
   const popup = { closed: false, close: () => { popup.closed = true; } };
   const source = await readFile(new URL("../resources/recovery-page.js", import.meta.url), "utf8");
   runInNewContext(source, {
+    URL,
     document: { getElementById: (id: string) => elements.get(id) },
-    window: { addEventListener: (name: string, handler: (event?: any) => any) => handlers.set(name, handler), removeEventListener: () => {}, open: () => popup },
+    window: { location: { origin: "http://127.0.0.1:8765" }, addEventListener: (name: string, handler: (event?: any) => any) => handlers.set(name, handler), removeEventListener: () => {}, open: () => popup },
     navigator: { sendBeacon: () => {} }, setInterval: () => 1, clearInterval: () => {},
-    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com" }) }; },
+    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com", callbackOrigins: ["https://idmsa.apple.com", "https://api.apple-cloudkit.com"] }) }; },
   });
   await new Promise((done) => setImmediate(done));
   handlers.get("signin")!();
@@ -99,5 +100,22 @@ test("trusted page rejects wrong source, wrong origin and conflicting fields; ac
     const b = await browser(); await b.send({ ...event, source: b.popup });
     assert.equal(b.calls.some((call) => call.route === "token"), false); assert.equal(b.calls.filter((call) => call.route === "invalid").length, 1);
     assert.equal(b.elements.get("status")!.textContent.includes("synthetic-private-provider-text"), false);
+  }
+});
+
+test("popup readiness messages do not terminate recovery and default HTTPS ports are canonicalized", async () => {
+  const b = await browser();
+  await b.send({ source: b.popup, origin: "https://untrusted.example", data: { readiness: true } });
+  assert.equal(b.calls.some((call) => call.route === "invalid"), false);
+  await b.send({ source: b.popup, origin: "https://idmsa.apple.com:443", data: { ckSession: "synthetic-fresh" } });
+  assert.equal(b.calls.filter((call) => call.route === "token").length, 1);
+});
+
+test("callback diagnostics omit query, path, token and untrusted hostnames", async () => {
+  for (const origin of ["https://untrusted.example", "https://idmsa.apple.com.untrusted.example", "null"]) {
+    const b = await browser(); await b.send({ source: b.popup, origin, data: { ckSession: "synthetic-fresh" } });
+    const invalid = b.calls.find((call) => call.route === "invalid"); assert.ok(invalid);
+    assert.equal(invalid.body!.includes("synthetic-fresh"), false);
+    assert.equal(JSON.parse(invalid.body!).callbackHost, undefined);
   }
 });

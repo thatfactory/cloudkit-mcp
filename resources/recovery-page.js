@@ -20,14 +20,26 @@
     challenge = undefined;
     status.textContent = message;
   };
-  const invalid = () => { void post("invalid").catch(() => {}); finish("The sign-in response could not be validated. Return to your agent for recovery status."); };
+  const invalid = (check, origin) => {
+    const knownOrigins = { "https://api.apple-cloudkit.com": "cloudkitApi", "https://idmsa.apple.com": "appleSignIn", "https://www.icloud.com": "icloudWeb", "https://icloud.com": "icloudWeb", "https://appleid.apple.com": "appleId", "https://account.apple.com": "appleAccount", "https://icloud.developer.apple.com": "developerConsole", "null": "opaque" };
+    const originClass = origin === window.location.origin ? "localPage" : knownOrigins[origin] || "other";
+    let source = origin === "null" ? "opaque" : typeof origin === "string" && origin.length === 0 ? "empty" : "unavailable";
+    try { const parsed = new URL(origin); if (["https:", "http:"].includes(parsed.protocol)) source = parsed.hostname; } catch {}
+    const callbackHost = /^[a-z.-]+\.(?:apple|icloud|cdn-apple|apple-cloudkit)\.com$/.test(source) ? source : undefined;
+    void post("invalid", { check, originClass, callbackHost }).catch(() => {});
+    finish(`The sign-in response could not be validated. Callback source: ${source}. Return to your agent for recovery status.`);
+  };
   const receive = async (event) => {
     if (finished || !popup || event.source !== popup) return;
-    if (!challenge || event.origin !== challenge.origin) { invalid(); return; }
     const data = event.data;
-    if (!data || typeof data !== "object" || Array.isArray(data)) { invalid(); return; }
+    // Auth windows may send unrelated readiness messages before their token callback.
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    if (data.ckWebAuthToken === undefined && data.ckSession === undefined && data.errorMessage === undefined) return;
+    let origin = event.origin;
+    try { origin = new URL(origin).origin; } catch {}
+    if (!challenge || !challenge.callbackOrigins.includes(origin)) { invalid("origin", event.origin); return; }
     const values = [data.ckWebAuthToken, data.ckSession].filter((value) => value !== undefined);
-    if (values.length === 0 || values.some((value) => typeof value !== "string" || value.length < 1 || value.length > 4096) || values.some((value) => value !== values[0]) || data.errorMessage !== undefined) { invalid(); return; }
+    if (values.length === 0 || values.some((value) => typeof value !== "string" || value.length < 1 || value.length > 4096) || values.some((value) => value !== values[0]) || data.errorMessage !== undefined) { invalid(data.errorMessage !== undefined ? "provider" : "payload", event.origin); return; }
     // Stop accepting messages before the first asynchronous boundary.
     finished = true;
     try {

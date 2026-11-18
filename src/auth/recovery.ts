@@ -5,7 +5,7 @@ import { CloudKitTransport, type TransportResult } from "../api/transport.js";
 import { safeError } from "../errors.js";
 import { bindWebCredential, CredentialStore, reservationStatus, suspendWebSession, webSessionUsable, type WebUserCredential } from "./credential-store.js";
 import type { RecoveryProvider } from "./post-message.js";
-import { recoveryActive, RecoveryFailure, recoveryStatus, type RecoveryReason, type RecoveryReservation, type RecoveryStatus } from "./recovery-types.js";
+import { recoveryActive, RecoveryFailure, recoveryStatus, type CallbackOrigin, type RecoveryReason, type RecoveryReservation, type RecoveryStatus } from "./recovery-types.js";
 
 interface RunningRecovery { readonly attemptId: string; readonly controller: AbortController; readonly done: Promise<void> }
 
@@ -133,16 +133,16 @@ export class RecoveryCoordinator {
       });
     } catch (error) {
       const reason = controller.signal.aborted ? abortReason(controller) : error instanceof RecoveryFailure ? error.reason : "storageFailed";
-      try { await this.#update(profile, seed, reservation, reason === "operatorCancelled" ? "cancelled" : "failed", reason); }
+      try { await this.#update(profile, seed, reservation, reason === "operatorCancelled" ? "cancelled" : "failed", reason, error instanceof RecoveryFailure ? error.callbackOrigin : undefined, error instanceof RecoveryFailure ? error.callbackHost : undefined); }
       catch (failure) { if (!(failure instanceof RecoveryFailure && failure.reason === "superseded")) this.#storageFailures.set(profile.credentialRef, recoveryStatus("failed", reservation.attemptId, "storageFailed")); }
     } finally { clearTimeout(expire); clearInterval(monitor); }
   }
 
-  async #update(profile: Profile, seed: WebUserCredential, reservation: RecoveryReservation, state: RecoveryReservation["state"], reason?: RecoveryReason): Promise<void> {
+  async #update(profile: Profile, seed: WebUserCredential, reservation: RecoveryReservation, state: RecoveryReservation["state"], reason?: RecoveryReason, callbackOrigin?: CallbackOrigin, callbackHost?: string): Promise<void> {
     await this.store.withLock(profile.credentialRef, async () => {
       const current = await this.store.read(profile.credentialRef);
       if (!sameAttempt(current, seed, reservation) || !recoveryActive(current.recovery!.state)) throw new RecoveryFailure("superseded");
-      await this.store.write(profile.credentialRef, { ...suspendWebSession(current), recovery: { ...current.recovery!, state, ...(reason ? { reason } : {}) } });
+      await this.store.write(profile.credentialRef, { ...suspendWebSession(current), recovery: { ...current.recovery!, state, ...(reason ? { reason } : {}), ...(callbackOrigin ? { callbackOrigin } : {}), ...(callbackHost ? { callbackHost } : {}) } });
     });
   }
 }

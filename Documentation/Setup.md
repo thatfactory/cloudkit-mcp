@@ -102,7 +102,7 @@ Use `recover_session` with `action: "cancel"` and the returned `attemptId` to ca
 
 For an API token restricted to specific origins, configure a permitted loopback origin and a fixed `serve --recovery-port <port>` matching it. The default port is ephemeral (`0`). The challenge carries the local page's actual origin. The connector does not change the API token's callback or origin settings. If that configuration cannot support a local Post Message flow, use `--recovery-mode manual` and hidden-terminal import.
 
-Missing API configuration, an unbound legacy principal, unsafe storage, or an unverifiable legacy lock requires local setup or repair. Existing version-one slots migrate under their lease. Suspended slots retain the API configuration and principal binding, while consumed web tokens are removed. Proven-dead lock owners can be reclaimed; lock age alone never authorizes reuse.
+Missing API configuration, an unbound legacy principal, unsafe storage, or an unverifiable legacy lock requires local setup or repair. Existing version-one slots migrate under their lease. Update and restart every connector process sharing a store before using 0.3.0: older versions cannot read migrated version-two slots. Suspended slots retain the API configuration and principal binding, while consumed web tokens are removed. Proven-dead lock owners can be reclaimed; lock age alone never authorizes reuse.
 
 For immediate data inspection, read [Troubleshooting](../resources/troubleshooting.md). CloudKit Console's **Act As iCloud Account** is independent of the MCP session.
 

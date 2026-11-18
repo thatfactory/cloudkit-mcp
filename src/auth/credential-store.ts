@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { safeError } from "../errors.js";
 import type { Profile } from "../domain/types.js";
-import { recoveryActive, recoveryStatus, type RecoveryReservation, type RecoveryStatus } from "./recovery-types.js";
+import { callbackOriginClasses, publicAppleHost, recoveryActive, recoveryStatus, type RecoveryReservation, type RecoveryStatus } from "./recovery-types.js";
 
 /** Version one is accepted for migration; version two retains a binding without a usable token. */
 export interface WebUserCredential {
@@ -197,7 +197,7 @@ export function ownerAlive(pid: number, host: string): boolean {
 export function reservationStatus(reservation: RecoveryReservation): RecoveryStatus {
   if (recoveryActive(reservation.state) && reservation.expiresAt <= Date.now()) return recoveryStatus("failed", reservation.attemptId, "timedOut");
   if (recoveryActive(reservation.state) && !ownerAlive(reservation.ownerPid, reservation.ownerHost)) return recoveryStatus("failed", reservation.attemptId, "interrupted");
-  return recoveryStatus(reservation.state, reservation.attemptId, reservation.reason);
+  return recoveryStatus(reservation.state, reservation.attemptId, reservation.reason, reservation.callbackOrigin, reservation.callbackHost);
 }
 
 async function reclaimDeadLock(path: string): Promise<void> {
@@ -245,8 +245,8 @@ function validReservation(input: unknown): boolean {
   if (typeof input !== "object" || input === null) return false;
   const r = input as Record<string, unknown>;
   const states = ["starting", "awaitingUser", "verifying", "succeeded", "cancelled", "failed"];
-  const reasons = ["manualMode", "missingConfiguration", "principalUnbound", "principalMismatch", "configurationMismatch", "browserUnavailable", "authorizationFailed", "invalidCallback", "verificationFailed", "storageFailed", "timedOut", "interrupted", "superseded", "operatorCancelled", "localRepairRequired"];
-  return typeof r.attemptId === "string" && /^[a-f0-9]{36}$/.test(r.attemptId) && bounded(r.profileId, 255) && Number.isSafeInteger(r.ownerPid) && (r.ownerPid as number) > 0 && bounded(r.ownerHost, 255) && Number.isSafeInteger(r.expiresAt) && states.includes(String(r.state)) && (r.reason === undefined || reasons.includes(String(r.reason))) && onlyKeys(r, ["attemptId", "profileId", "ownerPid", "ownerHost", "expiresAt", "state", "reason"]);
+  const reasons = ["manualMode", "missingConfiguration", "principalUnbound", "principalMismatch", "configurationMismatch", "browserUnavailable", "authorizationFailed", "invalidCallback", "callbackOriginMismatch", "verificationFailed", "storageFailed", "timedOut", "interrupted", "superseded", "operatorCancelled", "localRepairRequired"];
+  return typeof r.attemptId === "string" && /^[a-f0-9]{36}$/.test(r.attemptId) && bounded(r.profileId, 255) && Number.isSafeInteger(r.ownerPid) && (r.ownerPid as number) > 0 && bounded(r.ownerHost, 255) && Number.isSafeInteger(r.expiresAt) && states.includes(String(r.state)) && (r.reason === undefined || reasons.includes(String(r.reason))) && (r.callbackOrigin === undefined || callbackOriginClasses.some((kind) => kind === r.callbackOrigin)) && (r.callbackHost === undefined || publicAppleHost(r.callbackHost)) && onlyKeys(r, ["attemptId", "profileId", "ownerPid", "ownerHost", "expiresAt", "state", "reason", "callbackOrigin", "callbackHost"]);
 }
 
 function bounded(value: unknown, maximum: number): value is string { return typeof value === "string" && value.length > 0 && value.length <= maximum; }
