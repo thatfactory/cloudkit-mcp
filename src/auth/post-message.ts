@@ -14,6 +14,9 @@ export interface RecoveryProvider {
 
 export type BrowserOpener = (localPage: string) => Promise<void>;
 
+// Apple's Post Message response is served by CloudKit's CDN, not its initial IDMSA sign-in host.
+const POST_MESSAGE_ORIGIN = "https://cdn.apple-cloudkit.com";
+
 /** Only a token-free loopback page is passed to the OS, never Apple's authorization URL. */
 export const openLocalBrowser: BrowserOpener = async (localPage) => {
   if (process.platform !== "darwin" && (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)) throw new RecoveryFailure("browserUnavailable");
@@ -53,7 +56,7 @@ export class PostMessageProvider implements RecoveryProvider {
       const route = request.url.slice(path.length);
       if (request.method === "GET" && route === "") { response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end(html); return; }
       if (request.method === "GET" && route === "client.js") { response.setHeader("Content-Type", "text/javascript; charset=utf-8"); response.end(script); return; }
-      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, callbackOrigins: [challenge.origin, "https://api.apple-cloudkit.com"], profileId: profile.id, environment: profile.environment })); return; }
+      if (request.method === "GET" && route === "challenge" && challenge && !settled) { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ...challenge, callbackOrigins: [POST_MESSAGE_ORIGIN], profileId: profile.id, environment: profile.environment })); return; }
       if (request.method !== "POST" || request.headers.origin !== origin || !["token", "cancel", "invalid"].includes(route)) { response.writeHead(403).end(); return; }
       if (settled) { response.writeHead(409).end(); return; }
       if (route === "cancel") { response.writeHead(204).end(); fail("operatorCancelled"); return; }

@@ -21,7 +21,7 @@
     status.textContent = message;
   };
   const invalid = (check, origin) => {
-    const knownOrigins = { "https://api.apple-cloudkit.com": "cloudkitApi", "https://idmsa.apple.com": "appleSignIn", "https://www.icloud.com": "icloudWeb", "https://icloud.com": "icloudWeb", "https://appleid.apple.com": "appleId", "https://account.apple.com": "appleAccount", "https://icloud.developer.apple.com": "developerConsole", "null": "opaque" };
+    const knownOrigins = { "https://api.apple-cloudkit.com": "cloudkitApi", "https://cdn.apple-cloudkit.com": "cloudkitCdn", "https://idmsa.apple.com": "appleSignIn", "https://www.icloud.com": "icloudWeb", "https://icloud.com": "icloudWeb", "https://appleid.apple.com": "appleId", "https://account.apple.com": "appleAccount", "https://icloud.developer.apple.com": "developerConsole", "null": "opaque" };
     const originClass = origin === window.location.origin ? "localPage" : knownOrigins[origin] || "other";
     let source = origin === "null" ? "opaque" : typeof origin === "string" && origin.length === 0 ? "empty" : "unavailable";
     try { const parsed = new URL(origin); if (["https:", "http:"].includes(parsed.protocol)) source = parsed.hostname; } catch {}

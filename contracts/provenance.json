@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-14",
+  "recordedAt": "2026-11-18",
   "referenceRepository": {
     "repository": "thatfactory/app-store-connect-mcp",
     "commit": "6d818dd57cbdf7b079388be14fb7a1cdc9060f02",
@@ -68,6 +68,19 @@
       "kind": "primaryArchivedDocumentation",
       "supports": ["subscriptions list public private scopes"],
       "limitations": ["shared scope not established"]
+    },
+    {
+      "id": "A12",
+      "url": "https://cdn.apple-cloudkit.com/ck/2/cloudkit.js",
+      "kind": "primaryVendorImplementation",
+      "supports": ["Post Message ckSession callback field", "popup sign-in handoff"],
+      "limitations": ["The connector adds explicit callback-origin and popup-window validation; the SDK alone is not evidence for those checks."]
+    },
+    {
+      "id": "A13",
+      "url": "https://developer.apple.com/videos/play/wwdc2022/10115/?time=163",
+      "kind": "primaryVendorWalkthrough",
+      "supports": ["Act As iCloud Account", "account-relative Console record and zone inspection", "container environment and schema navigation end the acting-as session"]
     }
   ],
   "liveEvidence": {

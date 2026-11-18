@@ -25,7 +25,7 @@ test("loopback flow uses the exact origin, bounds its receiver and never exposes
     const html = await fetch(localPage); assert.equal(html.headers.get("cache-control"), "no-store"); assert.match(html.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
     const text = await html.text(); assert.equal(text.includes("synthetic-api"), false); assert.equal(text.includes("idmsa.apple.com"), false);
     assert.equal((await fetch(`${localPage}challenge`, { headers: { "Sec-Fetch-Site": "cross-site" } })).status, 403);
-    const challenge = await (await fetch(`${localPage}challenge`)).json(); assert.equal(challenge.origin, "https://idmsa.apple.com");
+    const challenge = await (await fetch(`${localPage}challenge`)).json(); assert.equal(challenge.origin, "https://idmsa.apple.com"); assert.deepEqual(challenge.callbackOrigins, ["https://cdn.apple-cloudkit.com"]);
     assert.equal((await fetch(`${localPage}token`, { method: "POST", headers: { Origin: "https://untrusted.example", "Content-Type": "application/json" }, body: JSON.stringify({ token: "synthetic-fresh" }) })).status, 403);
     assert.equal((await fetch(`${localPage}token`, { method: "POST", headers: { Origin: requestedOrigin, "Content-Type": "application/json" }, body: JSON.stringify({ token: "synthetic-fresh" }) })).status, 204);
   });
@@ -74,7 +74,7 @@ async function browser() {
     document: { getElementById: (id: string) => elements.get(id) },
     window: { location: { origin: "http://127.0.0.1:8765" }, addEventListener: (name: string, handler: (event?: any) => any) => handlers.set(name, handler), removeEventListener: () => {}, open: () => popup },
     navigator: { sendBeacon: () => {} }, setInterval: () => 1, clearInterval: () => {},
-    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com", callbackOrigins: ["https://idmsa.apple.com", "https://api.apple-cloudkit.com"] }) }; },
+    fetch: async (route: string, init?: { body: string }) => { calls.push({ route, ...(init ? { body: init.body } : {}) }); return { ok: true, json: async () => ({ url: "https://idmsa.apple.com/synthetic-signin", origin: "https://idmsa.apple.com", callbackOrigins: ["https://cdn.apple-cloudkit.com"] }) }; },
   });
   await new Promise((done) => setImmediate(done));
   handlers.get("signin")!();
@@ -84,18 +84,19 @@ async function browser() {
 test("trusted page rejects wrong source, wrong origin and conflicting fields; accepts each Apple token shape once", async () => {
   for (const field of ["ckWebAuthToken", "ckSession"]) {
     const b = await browser();
-    await b.send({ source: {}, origin: "https://idmsa.apple.com", data: { [field]: "synthetic-fresh" } });
+    await b.send({ source: {}, origin: "https://cdn.apple-cloudkit.com", data: { [field]: "synthetic-fresh" } });
     assert.equal(b.calls.some((call) => call.route === "token"), false);
-    const event = { source: b.popup, origin: "https://idmsa.apple.com", data: { [field]: "synthetic-fresh" } };
+    const event = { source: b.popup, origin: "https://cdn.apple-cloudkit.com", data: { [field]: "synthetic-fresh" } };
     await Promise.all([b.send(event), b.send(event)]);
     assert.equal(b.calls.filter((call) => call.route === "token").length, 1);
     assert.equal(b.elements.get("status")!.textContent.includes("synthetic-fresh"), false);
   }
   for (const event of [
     { origin: "https://untrusted.example", data: { ckSession: "synthetic-fresh" } },
-    { origin: "https://idmsa.apple.com", data: { ckSession: "a", ckWebAuthToken: "b" } },
-    { origin: "https://idmsa.apple.com", data: { ckSession: "" } },
-    { origin: "https://idmsa.apple.com", data: { errorMessage: "synthetic-private-provider-text" } },
+    { origin: "https://idmsa.apple.com", data: { ckSession: "synthetic-fresh" } },
+    { origin: "https://cdn.apple-cloudkit.com", data: { ckSession: "a", ckWebAuthToken: "b" } },
+    { origin: "https://cdn.apple-cloudkit.com", data: { ckSession: "" } },
+    { origin: "https://cdn.apple-cloudkit.com", data: { errorMessage: "synthetic-private-provider-text" } },
   ]) {
     const b = await browser(); await b.send({ ...event, source: b.popup });
     assert.equal(b.calls.some((call) => call.route === "token"), false); assert.equal(b.calls.filter((call) => call.route === "invalid").length, 1);
@@ -107,7 +108,7 @@ test("popup readiness messages do not terminate recovery and default HTTPS ports
   const b = await browser();
   await b.send({ source: b.popup, origin: "https://untrusted.example", data: { readiness: true } });
   assert.equal(b.calls.some((call) => call.route === "invalid"), false);
-  await b.send({ source: b.popup, origin: "https://idmsa.apple.com:443", data: { ckSession: "synthetic-fresh" } });
+  await b.send({ source: b.popup, origin: "https://cdn.apple-cloudkit.com:443", data: { ckSession: "synthetic-fresh" } });
   assert.equal(b.calls.filter((call) => call.route === "token").length, 1);
 });
 

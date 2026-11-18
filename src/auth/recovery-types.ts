@@ -11,7 +11,7 @@ export interface RecoveryStatus {
 }
 
 export type RecoveryReason = "manualMode" | "missingConfiguration" | "principalUnbound" | "principalMismatch" | "configurationMismatch" | "browserUnavailable" | "authorizationFailed" | "invalidCallback" | "callbackOriginMismatch" | "verificationFailed" | "storageFailed" | "timedOut" | "interrupted" | "superseded" | "operatorCancelled" | "localRepairRequired";
-export const callbackOriginClasses = ["cloudkitApi", "appleSignIn", "icloudWeb", "appleId", "appleAccount", "developerConsole", "localPage", "opaque", "other"] as const;
+export const callbackOriginClasses = ["cloudkitApi", "cloudkitCdn", "appleSignIn", "icloudWeb", "appleId", "appleAccount", "developerConsole", "localPage", "opaque", "other"] as const;
 export type CallbackOrigin = (typeof callbackOriginClasses)[number];
 
 /** Persisted reservation, protected by the same owner-only slot and lease as credentials. */
